@@ -1,0 +1,13 @@
+# Local tool settings
+wireless-mic-battery-alert-PL/.claude/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Build artifacts
+wireless-mic-battery-alert-eng/build/
+wireless-mic-battery-alert-eng/dist/
+
+# Runtime/local files
+wireless-mic-battery-alert-eng/config.json

@@ -1,0 +1,8 @@
+sounddevice
+numpy
+matplotlib
+pystray
+Pillow
+sv-ttk
+pygame
+pyinstaller
