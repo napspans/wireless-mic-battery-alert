@@ -65,6 +65,10 @@ cd wireless-mic-battery-alert-eng
 python main.py
 ```
 
+## Screenshot
+
+![Application screenshot](./docs/images/app-screenshot.png)
+
 ## Windows Build
 
 Use a native Windows environment for final builds.  
