@@ -1,6 +1,7 @@
 import logging
 import sys
 import os
+import queue
 import threading
 import time
 import tkinter as tk
@@ -29,47 +30,49 @@ class App:
         self._quit_event = threading.Event()
         self._last_alert_time: float = 0.0
         self._alert_lock = threading.Lock()
-        self._last_alert_thread: threading.Thread | None = None
+        self._sound_queue: queue.Queue = queue.Queue(maxsize=3)
+
+    def _play(self, sound_path: str) -> None:
+        """通知音を再生キューに積む。
+
+        以前は再生ごとにスレッドを起こしていたため、アラート・一時停止・復帰が
+        続けざまに起きると複数の音が同時に鳴って聞き分けられなかった。
+        専用ワーカーで1つずつ順番に鳴らす。
+        """
+        if not sound_path.startswith("builtin:") and not sound_path.startswith("custom:"):
+            sound_path = settings.resolve_app_path(sound_path)
+        volume = self._config.get("alert_volume", 80)
+        try:
+            self._sound_queue.put_nowait((sound_path, volume))
+        except queue.Full:
+            # 状態が短時間に何度も変わった場合、古い音を鳴らし続けても意味がない
+            logger.debug("通知音のキューが一杯のため破棄しました: %s", sound_path)
+
+    def _sound_worker(self) -> None:
+        while not self._quit_event.is_set():
+            item = self._sound_queue.get()
+            if item is None:
+                break
+            sound_path, volume = item
+            try:
+                self._notifier.play_sound(sound_path, volume)
+            except Exception:
+                logger.exception("通知音の再生に失敗しました: %s", sound_path)
 
     def _on_alert(self):
         with self._alert_lock:
             self._last_alert_time = time.monotonic()
-        sound_path = self._config.get("alert_sound_path", "builtin:marimba")
-        volume = self._config.get("alert_volume", 80)
-        if not sound_path.startswith("builtin:") and not sound_path.startswith("custom:"):
-            sound_path = settings.resolve_app_path(sound_path)
-        t = threading.Thread(
-            target=self._notifier.play_sound,
-            args=(sound_path, volume),
-            daemon=True,
-        )
-        self._last_alert_thread = t
-        t.start()
+        self._play(self._config.get("alert_sound_path", "builtin:error"))
 
     def _on_auto_pause(self):
         if not self._config.get("pause_sound_enabled", True):
             return
-        pause_sound_path = self._config.get("pause_sound_path", "builtin:notify_04")
-        volume = self._config.get("alert_volume", 80)
-
-        def _play():
-            t = self._last_alert_thread
-            if t is not None:
-                t.join()
-            try:
-                self._notifier.play_sound(pause_sound_path, volume)
-            except Exception:
-                pass
-
-        threading.Thread(target=_play, daemon=True).start()
+        self._play(self._config.get("pause_sound_path", "builtin:marimba"))
 
     def _on_auto_resume(self):
-        volume = self._config.get("alert_volume", 80)
-        threading.Thread(
-            target=self._notifier.play_sound,
-            args=("builtin:notify_11", volume),
-            daemon=True,
-        ).start()
+        if not self._config.get("pause_sound_enabled", True):
+            return
+        self._play(self._config.get("monitor_resume_sound_path", "builtin:notify_11"))
 
     def _on_config_save(self, new_config: dict):
         device_changed = new_config.get('device_index') != self._config.get('device_index')
@@ -152,13 +155,7 @@ class App:
         if self._monitor.is_running:
             self._monitor.stop()
             if self._config.get("monitor_stop_sound_enabled", True):
-                volume = self._config.get("alert_volume", 80)
-                sound_path = self._config.get("monitor_stop_sound_path", "builtin:notify_11")
-                threading.Thread(
-                    target=self._notifier.play_sound,
-                    args=(sound_path, volume),
-                    daemon=True,
-                ).start()
+                self._play(self._config.get("monitor_stop_sound_path", "builtin:marimba"))
         else:
             try:
                 self._monitor.start()
@@ -166,13 +163,7 @@ class App:
                 self._on_stream_error(str(exc))
                 return
             if self._config.get("monitor_resume_sound_enabled", True):
-                volume = self._config.get("alert_volume", 80)
-                sound_path = self._config.get("monitor_resume_sound_path", "builtin:notify_11")
-                threading.Thread(
-                    target=self._notifier.play_sound,
-                    args=(sound_path, volume),
-                    daemon=True,
-                ).start()
+                self._play(self._config.get("monitor_resume_sound_path", "builtin:notify_11"))
 
     def _is_monitoring(self) -> bool:
         return self._monitor.is_running
@@ -221,6 +212,7 @@ class App:
             self._on_stream_error(str(exc))
         self._tray.start()
 
+        threading.Thread(target=self._sound_worker, daemon=True).start()
         threading.Thread(target=self._state_polling_loop, daemon=True).start()
 
         self._quit_event.wait()

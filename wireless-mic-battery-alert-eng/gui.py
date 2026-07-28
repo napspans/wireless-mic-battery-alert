@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 import tkinter as tk
 import tkinter.filedialog as filedialog
 import tkinter.ttk as ttk
@@ -921,7 +922,12 @@ class SettingsGUI:
             self._apply_graph_theme(resolved_theme)
 
             self._dirty = False
-            self._save_status_label.config(text="✓ 保存しました", foreground=colors["success"])
+            # 保存のたびに文字列が変わらないと、2回目以降に保存されたのかが
+            # 分からない。時刻を添えて更新されたことを見えるようにする。
+            self._save_status_label.config(
+                text=f"✓ {time.strftime('%H:%M:%S')} に保存しました",
+                foreground=colors["success"],
+            )
         finally:
             self._suspend_dirty = False
 

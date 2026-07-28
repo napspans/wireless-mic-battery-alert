@@ -66,6 +66,9 @@ class AudioMonitor:
     _WARMUP_SEC = 3  # 起動直後のウォームアップ期間（秒）
     # 無線の瞬断で鳴らさないための猶予。信号途絶は即座に判別できるので短くてよい。
     _SIGNAL_LOST_SEC = 1.0
+    # 復帰側の猶予。電源投入直後はリンクが安定するまで信号が途切れがちで、
+    # 1ブロックでも復帰扱いにすると復帰→途絶→アラートを何度も繰り返してしまう。
+    _SIGNAL_BACK_SEC = 1.0
 
     def __init__(
         self,
@@ -119,6 +122,7 @@ class AudioMonitor:
 
     def _monitor_loop(self):
         silence_start: float | None = None
+        signal_back_start: float | None = None
         last_alert: float | None = None
 
         while not self._stop_event.is_set():
@@ -131,6 +135,7 @@ class AudioMonitor:
             if is_silent:
                 if silence_start is None:
                     silence_start = now
+                signal_back_start = None
                 if now - silence_start >= self._SIGNAL_LOST_SEC:
                     if self._warmup_start is None or (now - self._warmup_start) < self._WARMUP_SEC:
                         pass  # ウォームアップ中はアラートをスキップ
@@ -145,11 +150,12 @@ class AudioMonitor:
                                 self._on_auto_pause()
             else:
                 silence_start = None
-                # 信号が戻った時点で復帰する。信号途絶は瞬時に判別できるため
-                # 復帰を遅らせる必要がない。
-                if self._paused:
+                if signal_back_start is None:
+                    signal_back_start = now
+                if self._paused and (now - signal_back_start) >= self._SIGNAL_BACK_SEC:
                     self._paused = False
                     self._alert_count = 0
+                    signal_back_start = None
                     if self._on_auto_resume:
                         self._on_auto_resume()
 
