@@ -5,7 +5,7 @@ _ICON_COLORS = {
     "idle": "#808080",
     "monitoring": "#00CC44",
     "alert": "#FF2222",
-    "snoozed": "#FFA500",
+    "paused": "#FFA500",
 }
 
 

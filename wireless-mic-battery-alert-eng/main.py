@@ -46,7 +46,7 @@ class App:
         self._last_alert_thread = t
         t.start()
 
-    def _on_snoozed(self):
+    def _on_auto_pause(self):
         if not self._config.get("pause_sound_enabled", True):
             return
         pause_sound_path = self._config.get("pause_sound_path", "builtin:notify_04")
@@ -63,7 +63,7 @@ class App:
 
         threading.Thread(target=_play, daemon=True).start()
 
-    def _on_snooze_resume(self):
+    def _on_auto_resume(self):
         volume = self._config.get("alert_volume", 80)
         threading.Thread(
             target=self._notifier.play_sound,
@@ -187,8 +187,8 @@ class App:
         while not self._quit_event.is_set():
             if not self._monitor.is_running:
                 state = "idle"
-            elif self._monitor.is_snoozed:
-                state = "snoozed"
+            elif self._monitor.is_paused:
+                state = "paused"
             else:
                 with self._alert_lock:
                     elapsed = time.monotonic() - self._last_alert_time
@@ -205,8 +205,8 @@ class App:
         self._monitor = AudioMonitor(
             self._config,
             on_alert=self._on_alert,
-            on_snoozed=self._on_snoozed,
-            on_snooze_resume=self._on_snooze_resume,
+            on_auto_pause=self._on_auto_pause,
+            on_auto_resume=self._on_auto_resume,
         )
         self._tray = TrayIcon(
             on_open_settings=self._open_settings,

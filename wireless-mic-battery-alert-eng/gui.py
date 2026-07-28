@@ -7,7 +7,7 @@ import tkinter.ttk as ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-from monitor import AudioMonitor, list_input_devices
+from monitor import DB_FLOOR, AudioMonitor, list_input_devices
 import theme
 from theme import apply_theme, get_colors, get_system_theme
 
@@ -35,7 +35,10 @@ _PAUSE_COMBO_TO_PATH = {
 _PAUSE_PATH_TO_COMBO = {v: k for k, v in _PAUSE_COMBO_TO_PATH.items()}
 
 
+
 class SettingsGUI:
+    _SAVE_DEBOUNCE_MS = 500
+
     def __init__(
         self,
         monitor: AudioMonitor,
@@ -49,6 +52,9 @@ class SettingsGUI:
         self._on_toggle_monitor = on_toggle_monitor
         self._running = True
         self._zoom_mode = False
+        self._dirty = False
+        self._suspend_dirty = True  # UI構築中と保存中は変更として扱わない
+        self._save_after_id = None
         self._cards: list[tk.Frame] = []
         self._card_inners: list[tk.Frame] = []
         self._bg_frames: list[tk.Frame] = []
@@ -60,7 +66,7 @@ class SettingsGUI:
         self._root.title("マイク電池切れ警告 - 設定")
         self._root.geometry("640x720")
         self._root.resizable(False, False)
-        self._root.protocol("WM_DELETE_WINDOW", self.destroy)
+        self._root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._devices = list_input_devices()
 
@@ -77,7 +83,56 @@ class SettingsGUI:
         if self._monitor.is_running:
             self._monitor_btn_var.set("監視 停止")
 
+        self._watch_variables()
+        self._suspend_dirty = False
+
         self._root.after(500, self._update_waveform)
+
+    def _watch_variables(self) -> None:
+        """設定に対応する全ての入力を監視する。
+
+        個々のウィジェットに <FocusOut> を張る方式では、入力欄に文字を打った直後や
+        スピンボックスの矢印を押しただけでは変更が拾えず、他所をクリックするまで
+        保存対象にならなかった。変数そのものを監視して取りこぼしをなくす。
+        """
+        self._tracked_vars = [
+            self._device_var,
+            self._interval_var,
+            self._volume_var,
+            self._sound_combo_var,
+            self._sound_var,
+            self._pause_sound_enabled_var,
+            self._pause_sound_combo_var,
+            self._pause_sound_var,
+            self._monitor_stop_sound_enabled_var,
+            self._monitor_stop_sound_combo_var,
+            self._monitor_stop_sound_var,
+            self._monitor_resume_sound_enabled_var,
+            self._monitor_resume_sound_combo_var,
+            self._monitor_resume_sound_var,
+            self._auto_pause_enabled_var,
+            self._auto_pause_alert_count_var,
+            self._theme_var,
+        ]
+        for var in self._tracked_vars:
+            var.trace_add("write", lambda *_: self._mark_dirty())
+
+    def _mark_dirty(self, event=None) -> None:
+        """変更を受けて自動保存を予約する。
+
+        変数監視は1文字打つたびに発火するため、そのまま保存すると config.json への
+        書き込みとデバイス再起動が連打される。入力が止まってから一度だけ保存する。
+        """
+        if self._suspend_dirty or not self._running:
+            return
+        self._dirty = True
+        colors = get_colors(self._resolve_theme())
+        self._save_status_label.config(
+            text="保存中…", foreground=colors["secondary_label"]
+        )
+        if self._save_after_id is not None:
+            self._root.after_cancel(self._save_after_id)
+        self._save_after_id = self._root.after(self._SAVE_DEBOUNCE_MS, self._on_save)
 
     # -------------------------------------------------------------------------
     # UI構築
@@ -156,14 +211,10 @@ class SettingsGUI:
         colors = get_colors(self._resolve_theme())
         self._fig = Figure(figsize=(5.8, 2.2), tight_layout=True)
         self._ax = self._fig.add_subplot(111)
-        self._ax.set_ylim(-120, 0)
+        self._ax.set_ylim(DB_FLOOR, 0)
         self._ax.set_ylabel("dB", fontsize=8)
         self._ax.set_xticks([])
         self._line, = self._ax.plot([], [], lw=0.8)
-        self._threshold_line = self._ax.axhline(
-            y=self._config.get("silence_threshold_db", -80.0),
-            color="red", linestyle="--", lw=0.8
-        )
 
         waveform_frame = tk.Frame(self._root, background=colors["bg"], highlightthickness=0)
         waveform_frame.pack(fill=tk.X, padx=_PAD_OUTER, pady=(_PAD_OUTER, 0))
@@ -247,31 +298,12 @@ class SettingsGUI:
                 self._device_var.set(default_device["name"])
             else:
                 self._device_combo.current(0)
-        self._device_combo.bind("<<ComboboxSelected>>", self._on_device_selected)
-
-        # 無音閾値 (dB)
-        self._make_body_label(monitor_content, "無音閾値 (dB)", colors, row=2, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._threshold_var = tk.DoubleVar(value=self._config.get("silence_threshold_db", -80.0))
-        self._threshold_spinbox = ttk.Spinbox(monitor_content, from_=-120, to=0, increment=1, textvariable=self._threshold_var, width=10)
-        self._threshold_spinbox.grid(row=2, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._threshold_spinbox.bind("<FocusOut>", self._auto_save)
-        self._threshold_spinbox.bind("<Return>", self._auto_save)
-
-        # 無音継続時間 (秒)
-        self._make_body_label(monitor_content, "無音継続時間 (秒)", colors, row=3, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._duration_var = tk.IntVar(value=self._config.get("silence_duration_sec", 5))
-        self._duration_spinbox = ttk.Spinbox(monitor_content, from_=1, to=300, increment=1, textvariable=self._duration_var, width=10)
-        self._duration_spinbox.grid(row=3, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._duration_spinbox.bind("<FocusOut>", self._auto_save)
-        self._duration_spinbox.bind("<Return>", self._auto_save)
 
         # アラート間隔 (秒)
-        self._make_body_label(monitor_content, "アラート間隔 (秒)", colors, row=4, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._make_body_label(monitor_content, "アラート間隔 (秒)", colors, row=2, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
         self._interval_var = tk.IntVar(value=self._config.get("alert_interval_sec", 30))
         self._interval_spinbox = ttk.Spinbox(monitor_content, from_=5, to=600, increment=5, textvariable=self._interval_var, width=10)
-        self._interval_spinbox.grid(row=4, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._interval_spinbox.bind("<FocusOut>", self._auto_save)
-        self._interval_spinbox.bind("<Return>", self._auto_save)
+        self._interval_spinbox.grid(row=2, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
 
         # ── タブ2: 通知設定 ──────────────────────────────────────────────
         notify_frame = ttk.Frame(notebook)
@@ -344,7 +376,6 @@ class SettingsGUI:
             command=lambda v: self._volume_var.set(round(float(v))),
         )
         self._volume_scale.grid(row=0, column=0, sticky=tk.EW)
-        self._volume_scale.bind("<ButtonRelease-1>", self._auto_save)
 
         self._volume_entry = ttk.Entry(volume_frame, textvariable=self._volume_var, width=5)
         self._volume_entry.grid(row=0, column=1, sticky=tk.W, padx=(8, 0))
@@ -373,7 +404,6 @@ class SettingsGUI:
         self._sound_var = tk.StringVar()
         self._sound_entry = ttk.Entry(self._custom_sound_frame, textvariable=self._sound_var, width=28)
         self._sound_entry.pack(side=tk.LEFT)
-        self._sound_entry.bind("<FocusOut>", self._auto_save)
         ttk.Button(self._custom_sound_frame, text="参照", command=self._browse_sound).pack(side=tk.LEFT, padx=(4, 0))
 
         self._sound_combo.bind("<<ComboboxSelected>>", self._on_sound_combo_changed)
@@ -426,7 +456,6 @@ class SettingsGUI:
         self._pause_sound_var = tk.StringVar()
         self._pause_sound_entry = ttk.Entry(self._custom_pause_sound_frame, textvariable=self._pause_sound_var, width=28)
         self._pause_sound_entry.pack(side=tk.LEFT)
-        self._pause_sound_entry.bind("<FocusOut>", self._auto_save)
         self._pause_sound_browse_btn = ttk.Button(self._custom_pause_sound_frame, text="参照", command=self._browse_pause_sound)
         self._pause_sound_browse_btn.pack(side=tk.LEFT, padx=(4, 0))
 
@@ -481,7 +510,6 @@ class SettingsGUI:
         self._monitor_stop_sound_var = tk.StringVar()
         self._monitor_stop_sound_entry = ttk.Entry(self._custom_monitor_stop_sound_frame, textvariable=self._monitor_stop_sound_var, width=28)
         self._monitor_stop_sound_entry.pack(side=tk.LEFT)
-        self._monitor_stop_sound_entry.bind("<FocusOut>", self._auto_save)
         self._monitor_stop_sound_browse_btn = ttk.Button(self._custom_monitor_stop_sound_frame, text="参照", command=self._browse_monitor_stop_sound)
         self._monitor_stop_sound_browse_btn.pack(side=tk.LEFT, padx=(4, 0))
 
@@ -536,7 +564,6 @@ class SettingsGUI:
         self._monitor_resume_sound_var = tk.StringVar()
         self._monitor_resume_sound_entry = ttk.Entry(self._custom_monitor_resume_sound_frame, textvariable=self._monitor_resume_sound_var, width=28)
         self._monitor_resume_sound_entry.pack(side=tk.LEFT)
-        self._monitor_resume_sound_entry.bind("<FocusOut>", self._auto_save)
         self._monitor_resume_sound_browse_btn = ttk.Button(self._custom_monitor_resume_sound_frame, text="参照", command=self._browse_monitor_resume_sound)
         self._monitor_resume_sound_browse_btn.pack(side=tk.LEFT, padx=(4, 0))
 
@@ -552,44 +579,34 @@ class SettingsGUI:
 
         self._make_headline_label(
             detail_content,
-            text="スヌーズ動作",
+            text="監視の自動一時停止",
             colors=colors,
             row=0, column=0, columnspan=2, sticky=tk.W, pady=(_PAD_ROW[0], _PAD_INNER),
         )
 
-        # 自動スヌーズ有効
-        self._make_body_label(detail_content, "自動スヌーズ", colors, row=1, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._auto_snooze_enabled_var = tk.BooleanVar(value=self._config.get("auto_snooze_enabled", True))
-        self._auto_snooze_enabled_check = self._make_checkbutton(
+        self._make_body_label(detail_content, "自動一時停止", colors, row=1, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._auto_pause_enabled_var = tk.BooleanVar(value=self._config.get("auto_pause_enabled", True))
+        self._auto_pause_enabled_check = self._make_checkbutton(
             detail_content,
-            text="自動スヌーズを有効にする",
-            variable=self._auto_snooze_enabled_var,
-            command=self._auto_save,
+            text="アラート後に監視を一時停止する",
+            variable=self._auto_pause_enabled_var,
+            command=self._mark_dirty,
             colors=colors,
         )
-        self._auto_snooze_enabled_check.grid(row=1, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._auto_pause_enabled_check.grid(row=1, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
 
-        # アラート回数
-        self._make_body_label(detail_content, "アラート回数", colors, row=2, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._auto_snooze_alert_count_var = tk.IntVar(value=self._config.get("auto_snooze_alert_count", 2))
-        self._auto_snooze_alert_count_spinbox = ttk.Spinbox(
+        self._make_body_label(detail_content, "一時停止までのアラート回数", colors, row=2, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._auto_pause_alert_count_var = tk.IntVar(value=self._config.get("auto_pause_alert_count", 1))
+        self._auto_pause_alert_count_spinbox = ttk.Spinbox(
             detail_content, from_=1, to=10, increment=1,
-            textvariable=self._auto_snooze_alert_count_var, width=10,
+            textvariable=self._auto_pause_alert_count_var, width=10,
         )
-        self._auto_snooze_alert_count_spinbox.grid(row=2, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._auto_snooze_alert_count_spinbox.bind("<FocusOut>", self._auto_save)
-        self._auto_snooze_alert_count_spinbox.bind("<Return>", self._auto_save)
+        self._auto_pause_alert_count_spinbox.grid(row=2, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
 
-        # スヌーズ解除秒数
-        self._make_body_label(detail_content, "スヌーズ解除秒数", colors, row=3, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._auto_snooze_resume_sec_var = tk.IntVar(value=self._config.get("auto_snooze_resume_sec", 3))
-        self._auto_snooze_resume_sec_spinbox = ttk.Spinbox(
-            detail_content, from_=1, to=30, increment=1,
-            textvariable=self._auto_snooze_resume_sec_var, width=10,
+        self._make_body_label(
+            detail_content, "信号が戻ると自動的に監視を再開します", colors,
+            row=3, column=1, sticky=tk.W, padx=6, pady=(0, _PAD_INNER),
         )
-        self._auto_snooze_resume_sec_spinbox.grid(row=3, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._auto_snooze_resume_sec_spinbox.bind("<FocusOut>", self._auto_save)
-        self._auto_snooze_resume_sec_spinbox.bind("<Return>", self._auto_save)
 
         self._make_headline_label(
             detail_content,
@@ -598,22 +615,10 @@ class SettingsGUI:
             row=4, column=0, columnspan=2, sticky=tk.W, pady=(_PAD_ROW[0], _PAD_INNER),
         )
 
-        self._make_body_label(detail_content, "スタートアップ起動", colors, row=5, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._startup_var = tk.BooleanVar(value=self._config.get("startup_enabled", True))
-        self._startup_check = self._make_checkbutton(
-            detail_content,
-            text="有効にする",
-            variable=self._startup_var,
-            command=self._auto_save,
-            colors=colors,
-        )
-        self._startup_check.grid(row=5, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
-
-        self._make_body_label(detail_content, "テーマ", colors, row=6, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._make_body_label(detail_content, "テーマ", colors, row=5, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
         self._theme_var = tk.StringVar(value=self._config.get("theme", "system"))
         self._theme_combo = ttk.Combobox(detail_content, textvariable=self._theme_var, values=["system", "light", "dark"], state="readonly", width=10)
-        self._theme_combo.grid(row=6, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
-        self._theme_combo.bind("<<ComboboxSelected>>", self._auto_save)
+        self._theme_combo.grid(row=5, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
 
     def _build_button_area(self):
         colors = get_colors(self._resolve_theme())
@@ -634,13 +639,6 @@ class SettingsGUI:
     # イベントハンドラ
     # -------------------------------------------------------------------------
 
-    def _on_device_selected(self, event=None):
-        selected_name = self._device_var.get()
-        matched = next((d for d in self._devices if d["name"] == selected_name), None)
-        if matched:
-            self._config["device_index"] = matched["index"]
-        self._auto_save()
-
     def _init_sound_ui(self):
         path = self._config.get("alert_sound_path", "builtin:error")
         if path in _PATH_TO_COMBO:
@@ -657,7 +655,7 @@ class SettingsGUI:
             self._custom_sound_frame.pack(fill=tk.X, pady=(2, 0))
         else:
             self._custom_sound_frame.pack_forget()
-            self._auto_save()
+            self._mark_dirty()
 
     def _init_pause_sound_ui(self):
         path = self._config.get("pause_sound_path", "builtin:marimba")
@@ -675,7 +673,7 @@ class SettingsGUI:
             self._custom_pause_sound_frame.pack(fill=tk.X, pady=(2, 0))
         else:
             self._custom_pause_sound_frame.pack_forget()
-        self._auto_save()
+        self._mark_dirty()
 
     def _init_monitor_stop_sound_ui(self):
         path = self._config.get("monitor_stop_sound_path", "builtin:marimba")
@@ -698,7 +696,7 @@ class SettingsGUI:
             self._custom_monitor_stop_sound_frame.pack(fill=tk.X, pady=(2, 0))
         else:
             self._custom_monitor_stop_sound_frame.pack_forget()
-        self._auto_save()
+        self._mark_dirty()
 
     def _init_monitor_resume_sound_ui(self):
         path = self._config.get("monitor_resume_sound_path", "builtin:notify_11")
@@ -721,7 +719,7 @@ class SettingsGUI:
             self._custom_monitor_resume_sound_frame.pack(fill=tk.X, pady=(2, 0))
         else:
             self._custom_monitor_resume_sound_frame.pack_forget()
-        self._auto_save()
+        self._mark_dirty()
 
     def _update_pause_sound_controls(self):
         enabled = self._pause_sound_enabled_var.get()
@@ -735,7 +733,7 @@ class SettingsGUI:
 
     def _on_pause_sound_enabled_changed(self):
         self._update_pause_sound_controls()
-        self._auto_save()
+        self._mark_dirty()
 
     def _update_monitor_stop_sound_controls(self):
         enabled = self._monitor_stop_sound_enabled_var.get()
@@ -749,7 +747,7 @@ class SettingsGUI:
 
     def _on_monitor_stop_sound_enabled_changed(self):
         self._update_monitor_stop_sound_controls()
-        self._auto_save()
+        self._mark_dirty()
 
     def _update_monitor_resume_sound_controls(self):
         enabled = self._monitor_resume_sound_enabled_var.get()
@@ -763,7 +761,7 @@ class SettingsGUI:
 
     def _on_monitor_resume_sound_enabled_changed(self):
         self._update_monitor_resume_sound_controls()
-        self._auto_save()
+        self._mark_dirty()
 
     def _get_sound_path_value(self) -> str:
         selected = self._sound_combo_var.get()
@@ -875,7 +873,7 @@ class SettingsGUI:
 
     def _on_volume_entry_commit(self, event=None):
         self._sync_volume_var()
-        self._auto_save()
+        self._mark_dirty()
 
     def _sync_volume_var(self):
         try:
@@ -884,37 +882,53 @@ class SettingsGUI:
             value = self._config.get("alert_volume", 50)
         self._volume_var.set(max(0, min(100, value)))
 
-    def _on_save(self):
-        self._config["silence_threshold_db"] = self._threshold_var.get()
-        self._config["silence_duration_sec"] = self._duration_var.get()
-        self._config["alert_interval_sec"] = self._interval_var.get()
-        self._config["alert_sound_path"] = self._get_sound_path_value()
-        self._config["pause_sound_enabled"] = self._pause_sound_enabled_var.get()
-        self._config["pause_sound_path"] = self._get_pause_sound_path_value()
-        self._config["monitor_stop_sound_enabled"] = self._monitor_stop_sound_enabled_var.get()
-        self._config["monitor_stop_sound_path"] = self._get_monitor_stop_sound_path_value()
-        self._config["monitor_resume_sound_enabled"] = self._monitor_resume_sound_enabled_var.get()
-        self._config["monitor_resume_sound_path"] = self._get_monitor_resume_sound_path_value()
-        self._config["alert_volume"] = self._volume_var.get()
-        self._config["startup_enabled"] = self._startup_var.get()
-        self._config["theme"] = self._theme_var.get()
-        self._config["auto_snooze_enabled"] = self._auto_snooze_enabled_var.get()
-        self._config["auto_snooze_alert_count"] = self._auto_snooze_alert_count_var.get()
-        self._config["auto_snooze_resume_sec"] = self._auto_snooze_resume_sec_var.get()
+    def _read_int(self, var: tk.IntVar, key: str, low: int, high: int) -> int:
+        """入力途中の空文字などで例外を出さずに読み取る。"""
+        try:
+            value = int(var.get())
+        except (tk.TclError, ValueError):
+            return self._config.get(key, low)
+        return max(low, min(high, value))
 
-        self._on_config_save(self._config)
-        _theme = self._config["theme"]
-        apply_theme(self._root, _theme)
-        resolved_theme = self._resolve_theme()
-        colors = get_colors(resolved_theme)
-        self._apply_visual_theme(resolved_theme)
-        self._apply_graph_theme(resolved_theme)
+    def _on_save(self, event=None):
+        if self._save_after_id is not None:
+            self._root.after_cancel(self._save_after_id)
+            self._save_after_id = None
+        self._suspend_dirty = True
+        try:
+            self._config["device_index"] = self._selected_device_index()
+            self._config["alert_interval_sec"] = self._read_int(
+                self._interval_var, "alert_interval_sec", 5, 600)
+            self._config["alert_sound_path"] = self._get_sound_path_value()
+            self._config["pause_sound_enabled"] = self._pause_sound_enabled_var.get()
+            self._config["pause_sound_path"] = self._get_pause_sound_path_value()
+            self._config["monitor_stop_sound_enabled"] = self._monitor_stop_sound_enabled_var.get()
+            self._config["monitor_stop_sound_path"] = self._get_monitor_stop_sound_path_value()
+            self._config["monitor_resume_sound_enabled"] = self._monitor_resume_sound_enabled_var.get()
+            self._config["monitor_resume_sound_path"] = self._get_monitor_resume_sound_path_value()
+            self._config["alert_volume"] = self._read_int(self._volume_var, "alert_volume", 0, 100)
+            self._config["theme"] = self._theme_var.get()
+            self._config["auto_pause_enabled"] = self._auto_pause_enabled_var.get()
+            self._config["auto_pause_alert_count"] = self._read_int(
+                self._auto_pause_alert_count_var, "auto_pause_alert_count", 1, 10)
 
-        self._save_status_label.config(text="✓ 保存しました", foreground=colors["success"])
-        self._root.after(1500, lambda: self._save_status_label.config(text=""))
+            self._on_config_save(self._config)
 
-    def _auto_save(self, event=None):
-        self._on_save()
+            apply_theme(self._root, self._config["theme"])
+            resolved_theme = self._resolve_theme()
+            colors = get_colors(resolved_theme)
+            self._apply_visual_theme(resolved_theme)
+            self._apply_graph_theme(resolved_theme)
+
+            self._dirty = False
+            self._save_status_label.config(text="✓ 保存しました", foreground=colors["success"])
+        finally:
+            self._suspend_dirty = False
+
+    def _selected_device_index(self) -> int | None:
+        selected = self._device_var.get()
+        matched = next((d for d in self._devices if d["name"] == selected), None)
+        return matched["index"] if matched else self._config.get("device_index")
 
     def _toggle_monitor(self):
         if self._on_toggle_monitor is not None:
@@ -939,10 +953,14 @@ class SettingsGUI:
 
         if not self._monitor.is_running:
             self._status_label.config(text="○ 停止中", foreground=colors["secondary_label"])
-        elif self._monitor.is_snoozed:
-            self._status_label.config(text="⏸ 一時停止中", foreground=colors["warning"])
+            return
+
+        db, zero_ratio = self._monitor.levels
+        levels = f"   {db:.1f} dB / ゼロ率 {zero_ratio * 100:.0f}%"
+        if self._monitor.is_paused:
+            self._status_label.config(text="⏸ 一時停止中" + levels, foreground=colors["warning"])
         else:
-            self._status_label.config(text="● 監視中", foreground=colors["success"])
+            self._status_label.config(text="● 監視中" + levels, foreground=colors["success"])
 
     def _update_waveform(self):
         if not self._running:
@@ -954,16 +972,12 @@ class SettingsGUI:
             db_history = self._monitor.get_db_history()
             self._line.set_data(range(len(db_history)), db_history)
             self._ax.set_xlim(0, len(db_history))
-            self._threshold_line.set_ydata(
-                [self._config.get("silence_threshold_db", -80.0)] * 2
-            )
             if self._zoom_mode:
-                recent = self._monitor.get_db_history()
-                valid = recent[recent > -119]
+                valid = db_history[db_history > DB_FLOOR]
                 if len(valid) > 0:
-                    self._ax.set_ylim(valid.min() - 5, valid.max() + 5)
+                    self._ax.set_ylim(valid.min() - 5, min(valid.max() + 5, 0))
             else:
-                self._ax.set_ylim(-120, 0)
+                self._ax.set_ylim(DB_FLOOR, 0)
         else:
             self._line.set_data([], [])
 
@@ -977,28 +991,24 @@ class SettingsGUI:
     def run(self) -> None:
         self._root.mainloop()
 
+    def _on_close(self) -> None:
+        # 保存待ちのまま閉じられると変更が失われるので、ここで確定させる
+        if self._save_after_id is not None:
+            self._root.after_cancel(self._save_after_id)
+            self._save_after_id = None
+        if self._dirty:
+            self._on_save()
+        self.destroy()
+
     def destroy(self) -> None:
         self._running = False
-        self._threshold_var = None
-        self._duration_var = None
-        self._interval_var = None
-        self._volume_var = None
-        self._startup_var = None
-        self._theme_var = None
-        self._device_var = None
-        self._sound_combo_var = None
-        self._sound_var = None
-        self._pause_sound_enabled_var = None
-        self._pause_sound_combo_var = None
-        self._pause_sound_var = None
-        self._monitor_stop_sound_enabled_var = None
-        self._monitor_stop_sound_combo_var = None
-        self._monitor_stop_sound_var = None
-        self._monitor_resume_sound_enabled_var = None
-        self._monitor_resume_sound_combo_var = None
-        self._monitor_resume_sound_var = None
+        self._suspend_dirty = True
+        if self._save_after_id is not None:
+            self._root.after_cancel(self._save_after_id)
+            self._save_after_id = None
+        for var in getattr(self, "_tracked_vars", []):
+            for name in var.trace_info():
+                var.trace_remove(name[0], name[1])
+        self._tracked_vars = []
         self._monitor_btn_var = None
-        self._auto_snooze_enabled_var = None
-        self._auto_snooze_alert_count_var = None
-        self._auto_snooze_resume_sec_var = None
         self._root.destroy()

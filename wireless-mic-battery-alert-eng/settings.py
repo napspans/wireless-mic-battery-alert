@@ -24,8 +24,7 @@ def resolve_app_path(path: str) -> str:
 
 DEFAULT_CONFIG = {
     "device_index": None,
-    "silence_threshold_db": -80.0,
-    "silence_duration_sec": 5,
+    "digital_silence_ratio": 0.5,
     "alert_interval_sec": 30,
     "alert_sound_path": "builtin:error",
     "pause_sound_enabled": True,
@@ -34,12 +33,16 @@ DEFAULT_CONFIG = {
     "monitor_stop_sound_path": "builtin:marimba",
     "monitor_resume_sound_enabled": True,
     "monitor_resume_sound_path": "builtin:notify_11",
-    "startup_enabled": True,
     "theme": "system",
     "alert_volume": 50,
-    "auto_snooze_enabled": True,
-    "auto_snooze_alert_count": 2,
-    "auto_snooze_resume_sec": 3,
+    "auto_pause_enabled": True,
+    "auto_pause_alert_count": 1,
+}
+
+# 旧キー -> 新キー。既存の config.json を読めるようにするための対応。
+_RENAMED_KEYS = {
+    "auto_snooze_enabled": "auto_pause_enabled",
+    "auto_snooze_alert_count": "auto_pause_alert_count",
 }
 
 
@@ -49,8 +52,14 @@ def load() -> dict:
         return DEFAULT_CONFIG.copy()
     with open(config_path, "r", encoding="utf-8") as f:
         data = json.load(f)
+
+    for old, new in _RENAMED_KEYS.items():
+        if old in data and new not in data:
+            data[new] = data[old]
+
     config = DEFAULT_CONFIG.copy()
-    config.update(data)
+    # 廃止済みのキーは取り込まない（config.json に残骸を残さない）
+    config.update({k: v for k, v in data.items() if k in DEFAULT_CONFIG})
     return config
 
 
