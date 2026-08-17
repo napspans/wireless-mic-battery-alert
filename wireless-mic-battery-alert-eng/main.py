@@ -1,4 +1,5 @@
 import logging
+import subprocess
 import sys
 import os
 import queue
@@ -7,6 +8,7 @@ import time
 import tkinter as tk
 from tkinter import messagebox
 
+import activity
 import settings
 from monitor import AudioMonitor
 from notifier import Notifier
@@ -17,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 class App:
     _ALERT_DISPLAY_SEC = 5.0
+    # 無操作判定の巡回間隔。しきい値は分単位なので細かく見る必要はない。
+    _IDLE_POLL_SEC = 5.0
 
     def __init__(self):
         self._base_dir = settings.get_app_dir()
@@ -31,6 +35,14 @@ class App:
         self._last_alert_time: float = 0.0
         self._alert_lock = threading.Lock()
         self._sound_queue: queue.Queue = queue.Queue(maxsize=3)
+        # 監視の開始／停止はトレイ・GUI・無操作巡回の3系統から呼ばれる。
+        # AudioMonitor.stop() はスレッド join を伴うため、重なると壊れる。
+        self._monitor_lock = threading.RLock()
+        # ユーザーが監視を望んでいるか。手動停止したのに無操作解除で勝手に
+        # 復活しないよう、自動制御はこれが True のときだけ働く。
+        self._monitor_desired = False
+        # 無操作により自動停止中か。手動停止と区別するために持つ。
+        self._suspended = False
 
     def _play(self, sound_path: str) -> None:
         """通知音を再生キューに積む。
@@ -78,12 +90,30 @@ class App:
         device_changed = new_config.get('device_index') != self._config.get('device_index')
         settings.save(new_config)
         self._config.update(new_config)
-        if device_changed:
+        if not device_changed:
+            return
+        with self._monitor_lock:
+            # 自動停止中は意図的に閉じている。ここで開き直すと電源要求が復活する。
+            # 次の再開時に新しいデバイスで開かれるため何もしなくてよい。
+            if not self._monitor.is_running:
+                return
             self._monitor.stop()
             try:
                 self._monitor.start()
             except Exception as exc:
                 self._on_stream_error(str(exc))
+
+    def _open_config_location(self) -> None:
+        """設定ファイルをエクスプローラーで選択状態にして開く。"""
+        config_path = settings.get_config_path()
+        try:
+            if os.path.exists(config_path):
+                subprocess.Popen(["explorer", f"/select,{config_path}"])
+            else:
+                # 一度も保存していない場合はファイルが無いので、置き場所を開く。
+                os.startfile(settings.get_app_dir())
+        except Exception:
+            logger.exception("設定ファイルの場所を開けませんでした: %s", config_path)
 
     def _run_gui(self):
         gui = SettingsGUI(
@@ -91,6 +121,7 @@ class App:
             self._config,
             on_config_save=self._on_config_save,
             on_toggle_monitor=self._toggle_monitor,
+            is_suspended=self._is_suspended,
         )
         with self._gui_lock:
             self._gui = gui
@@ -152,21 +183,93 @@ class App:
         self._open_settings()
 
     def _toggle_monitor(self):
-        if self._monitor.is_running:
+        """トレイ・GUI からの手動トグル。ユーザーの意図を更新する。"""
+        sound = None
+        with self._monitor_lock:
+            if self._monitor.is_running or self._suspended:
+                # 自動停止中はストリームが既に閉じているので停止処理は要らない。
+                if self._monitor.is_running:
+                    self._monitor.stop()
+                self._suspended = False
+                self._monitor_desired = False
+                if self._config.get("monitor_stop_sound_enabled", True):
+                    sound = self._config.get("monitor_stop_sound_path", "builtin:marimba")
+            else:
+                try:
+                    self._monitor.start()
+                except Exception as exc:
+                    self._on_stream_error(str(exc))
+                    return
+                self._monitor_desired = True
+                if self._config.get("monitor_resume_sound_enabled", True):
+                    sound = self._config.get("monitor_resume_sound_path", "builtin:notify_11")
+
+        if sound is not None:
+            self._play(sound)
+
+    def _suspend_monitor(self) -> None:
+        """無操作を検知してキャプチャストリームを閉じる。
+
+        開いたままだと USB オーディオドライバが SYSTEM 電源要求を立て続け、
+        Windows がスリープに入らない。手動停止と区別するため通知音は鳴らさない。
+        """
+        with self._monitor_lock:
+            if self._suspended or not self._monitor.is_running:
+                return
             self._monitor.stop()
-            if self._config.get("monitor_stop_sound_enabled", True):
-                self._play(self._config.get("monitor_stop_sound_path", "builtin:marimba"))
-        else:
+            self._suspended = True
+        logger.info("PC が無操作のため監視を自動停止しました")
+
+    def _resume_monitor(self) -> None:
+        with self._monitor_lock:
+            if not self._suspended:
+                return
             try:
                 self._monitor.start()
-            except Exception as exc:
-                self._on_stream_error(str(exc))
+            except Exception:
+                # スリープ復帰直後はデバイスが戻りきっていないことがある。
+                # ダイアログを出さず、次の巡回で開き直す。
+                logger.warning(
+                    "監視の自動再開に失敗しました。次の巡回で再試行します", exc_info=True
+                )
                 return
-            if self._config.get("monitor_resume_sound_enabled", True):
-                self._play(self._config.get("monitor_resume_sound_path", "builtin:notify_11"))
+            self._suspended = False
+        logger.info("操作を検知したため監視を自動再開しました")
+
+    def _evaluate_idle_suspend(self) -> None:
+        if not self._monitor_desired:
+            return
+        if not self._config.get("idle_suspend_enabled", True):
+            self._resume_monitor()
+            return
+
+        mic_shared = (
+            self._config.get("mic_share_monitor_enabled", True)
+            and activity.other_app_using_mic()
+        )
+        if activity.should_suspend(
+            activity.get_idle_seconds(),
+            self._config.get("idle_suspend_sec", 180),
+            mic_shared,
+        ):
+            self._suspend_monitor()
+        else:
+            self._resume_monitor()
+
+    def _idle_suspend_loop(self) -> None:
+        while not self._quit_event.is_set():
+            try:
+                self._evaluate_idle_suspend()
+            except Exception:
+                logger.exception("無操作判定に失敗しました")
+            self._quit_event.wait(self._IDLE_POLL_SEC)
 
     def _is_monitoring(self) -> bool:
-        return self._monitor.is_running
+        # 自動停止中も「監視する意図はある」ため、停止側のラベルを出す。
+        return self._monitor.is_running or self._suspended
+
+    def _is_suspended(self) -> bool:
+        return self._suspended
 
     def _quit(self):
         self._monitor.stop()
@@ -176,7 +279,9 @@ class App:
 
     def _state_polling_loop(self):
         while not self._quit_event.is_set():
-            if not self._monitor.is_running:
+            if self._suspended:
+                state = "suspended"
+            elif not self._monitor.is_running:
                 state = "idle"
             elif self._monitor.is_paused:
                 state = "paused"
@@ -204,16 +309,19 @@ class App:
             on_quit=self._quit,
             on_toggle_monitor=self._toggle_monitor,
             is_monitoring=self._is_monitoring,
+            on_open_config_location=self._open_config_location,
         )
 
         try:
             self._monitor.start()
+            self._monitor_desired = True
         except Exception as exc:
             self._on_stream_error(str(exc))
         self._tray.start()
 
         threading.Thread(target=self._sound_worker, daemon=True).start()
         threading.Thread(target=self._state_polling_loop, daemon=True).start()
+        threading.Thread(target=self._idle_suspend_loop, daemon=True).start()
 
         self._quit_event.wait()
 

@@ -23,9 +23,11 @@ def resolve_app_path(path: str) -> str:
     return os.path.normpath(os.path.join(get_app_dir(), path))
 
 DEFAULT_CONFIG = {
+    # デバイスは環境ごとに番号が変わるため既定を持たない。未設定時は
+    # resolve_input_device() が WASAPI の既定デバイスを選ぶ。
     "device_index": None,
     "digital_silence_ratio": 0.5,
-    "alert_interval_sec": 30,
+    "alert_interval_sec": 10,
     "alert_sound_path": "builtin:error",
     "pause_sound_enabled": True,
     "pause_sound_path": "builtin:marimba",
@@ -37,6 +39,12 @@ DEFAULT_CONFIG = {
     "alert_volume": 50,
     "auto_pause_enabled": True,
     "auto_pause_alert_count": 1,
+    # キャプチャストリームを開いたままだと USB オーディオドライバが SYSTEM
+    # 電源要求を立て、Windows がスリープに入らない。無操作が続いたら閉じる。
+    "idle_suspend_enabled": True,
+    # 各環境の Windows スリープ設定より短くないと機能しないため設定項目とする。
+    "idle_suspend_sec": 180,
+    "mic_share_monitor_enabled": True,
 }
 
 # 旧キー -> 新キー。既存の config.json を読めるようにするための対応。

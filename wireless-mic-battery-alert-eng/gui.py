@@ -10,6 +10,7 @@ from matplotlib.figure import Figure
 
 from monitor import DB_FLOOR, AudioMonitor, list_input_devices
 import theme
+import version
 from theme import apply_theme, get_colors, get_system_theme
 
 logger = logging.getLogger(__name__)
@@ -46,11 +47,13 @@ class SettingsGUI:
         config: dict,
         on_config_save: callable,
         on_toggle_monitor=None,
+        is_suspended=None,
     ):
         self._monitor = monitor
         self._config = config
         self._on_config_save = on_config_save
         self._on_toggle_monitor = on_toggle_monitor
+        self._is_suspended = is_suspended
         self._running = True
         self._zoom_mode = False
         self._dirty = False
@@ -62,6 +65,7 @@ class SettingsGUI:
         self._headline_labels: list[tk.Label] = []
         self._body_labels: list[tk.Label] = []
         self._checkbuttons: list[tk.Checkbutton] = []
+        self._scroll_canvases: list[tk.Canvas] = []
 
         self._root = tk.Tk()
         self._root.title("マイク電池切れ警告 - 設定")
@@ -74,6 +78,7 @@ class SettingsGUI:
         self._build_waveform_area()
         self._build_settings_form()
         self._build_button_area()
+        self._root.bind_all("<MouseWheel>", self._on_mousewheel)
 
         _theme = self._config.get("theme", "system")
         apply_theme(self._root, _theme)
@@ -81,7 +86,7 @@ class SettingsGUI:
         self._apply_visual_theme(resolved_theme)
         self._apply_graph_theme(resolved_theme)
 
-        if self._monitor.is_running:
+        if self._monitoring_active():
             self._monitor_btn_var.set("監視 停止")
 
         self._watch_variables()
@@ -113,10 +118,23 @@ class SettingsGUI:
             self._monitor_resume_sound_var,
             self._auto_pause_enabled_var,
             self._auto_pause_alert_count_var,
+            self._idle_suspend_enabled_var,
+            self._idle_suspend_sec_var,
+            self._mic_share_monitor_enabled_var,
             self._theme_var,
         ]
         for var in self._tracked_vars:
             var.trace_add("write", lambda *_: self._mark_dirty())
+
+    def _monitoring_active(self) -> bool:
+        """ユーザーから見て監視中か。
+
+        無操作による自動停止中はストリームが閉じているため is_running は False に
+        なるが、監視する意図は残っている。ボタン表示はこちらを基準にする。
+        """
+        if self._monitor.is_running:
+            return True
+        return bool(self._is_suspended and self._is_suspended())
 
     def _mark_dirty(self, event=None) -> None:
         """変更を受けて自動保存を予約する。
@@ -193,10 +211,59 @@ class SettingsGUI:
         for label in self._body_labels:
             label.configure(foreground=colors["label"], background=colors["surface"])
 
-        if hasattr(self, "_notify_canvas"):
-            self._notify_canvas.configure(background=colors["bg"])
+        for canvas in self._scroll_canvases:
+            canvas.configure(background=colors["bg"])
         if hasattr(self, "_save_status_label"):
             self._save_status_label.configure(background=colors["bg"], foreground=colors["secondary_label"])
+        if hasattr(self, "_version_label"):
+            self._version_label.configure(background=colors["bg"], foreground=colors["secondary_label"])
+
+    def _make_scrollable_tab(self, notebook, text: str, colors: dict) -> tk.Frame:
+        """スクロールできるタブを追加し、中身を載せる枠を返す。
+
+        ウィンドウはサイズ固定のため、設定項目が増えるとタブ内に収まらなくなる。
+        """
+        frame = ttk.Frame(notebook)
+        notebook.add(frame, text=text)
+
+        canvas = tk.Canvas(
+            frame,
+            highlightthickness=0,
+            background=colors["bg"],
+            yscrollincrement=20,
+        )
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+        inner = tk.Frame(canvas, background=colors["bg"], highlightthickness=0)
+
+        window = canvas.create_window((0, 0), window=inner, anchor="nw")
+        inner.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfigure(window, width=e.width),
+        )
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self._scroll_canvases.append(canvas)
+        return inner
+
+    def _on_mousewheel(self, event) -> None:
+        """ポインタが乗っているタブをスクロールする。
+
+        タブごとに bind_all すると後から張った側が全体を奪う。ホイールは
+        1箇所で受け、イベントの発生元から辿って対象のタブを決める。
+        """
+        widget = event.widget
+        while widget is not None:
+            if widget in self._scroll_canvases:
+                widget.yview_scroll(int(-event.delta / 120), "units")
+                return
+            widget = getattr(widget, "master", None)
 
     def _make_checkbutton(self, parent, text: str, variable, command, colors: dict) -> tk.Checkbutton:
         checkbutton = ttk.Checkbutton(
@@ -307,49 +374,7 @@ class SettingsGUI:
         self._interval_spinbox.grid(row=2, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
 
         # ── タブ2: 通知設定 ──────────────────────────────────────────────
-        notify_frame = ttk.Frame(notebook)
-        notebook.add(notify_frame, text="通知設定")
-        notify_canvas = tk.Canvas(
-            notify_frame,
-            highlightthickness=0,
-            background=colors["bg"],
-            yscrollincrement=20,
-        )
-        self._notify_canvas = notify_canvas
-        notify_scrollbar = ttk.Scrollbar(
-            notify_frame,
-            orient="vertical",
-            command=notify_canvas.yview,
-        )
-        notify_scrollable_inner = tk.Frame(
-            notify_canvas,
-            background=colors["bg"],
-            highlightthickness=0,
-        )
-
-        notify_scrollable_inner.bind(
-            "<Configure>",
-            lambda e: notify_canvas.configure(scrollregion=notify_canvas.bbox("all")),
-        )
-        notify_canvas.bind(
-            "<Configure>",
-            lambda e: notify_canvas.itemconfigure(self._notify_canvas_window, width=e.width),
-        )
-        self._notify_canvas_window = notify_canvas.create_window(
-            (0, 0),
-            window=notify_scrollable_inner,
-            anchor="nw",
-        )
-        notify_canvas.configure(yscrollcommand=notify_scrollbar.set)
-
-        def _on_notify_mousewheel(event):
-            notify_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        notify_canvas.bind_all("<MouseWheel>", _on_notify_mousewheel)
-
-        notify_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        notify_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
+        notify_scrollable_inner = self._make_scrollable_tab(notebook, "通知設定", colors)
         notify_content = self._add_card(notify_scrollable_inner, colors)
         notify_content.columnconfigure(1, weight=1)
 
@@ -573,9 +598,8 @@ class SettingsGUI:
         self._update_monitor_resume_sound_controls()
 
         # ── タブ3: 詳細設定 ──────────────────────────────────────────────
-        detail_frame = ttk.Frame(notebook)
-        notebook.add(detail_frame, text="詳細設定")
-        detail_content = self._add_card(detail_frame, colors)
+        detail_scrollable_inner = self._make_scrollable_tab(notebook, "詳細設定", colors)
+        detail_content = self._add_card(detail_scrollable_inner, colors)
         detail_content.columnconfigure(1, weight=1)
 
         self._make_headline_label(
@@ -611,15 +635,70 @@ class SettingsGUI:
 
         self._make_headline_label(
             detail_content,
-            text="アプリ設定",
+            text="スリープ連動",
             colors=colors,
             row=4, column=0, columnspan=2, sticky=tk.W, pady=(_PAD_ROW[0], _PAD_INNER),
         )
 
-        self._make_body_label(detail_content, "テーマ", colors, row=5, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._make_body_label(detail_content, "無操作で自動停止", colors, row=5, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._idle_suspend_enabled_var = tk.BooleanVar(
+            value=self._config.get("idle_suspend_enabled", True))
+        self._idle_suspend_enabled_check = self._make_checkbutton(
+            detail_content,
+            text="PC の無操作が続いたら監視を止める",
+            variable=self._idle_suspend_enabled_var,
+            command=self._mark_dirty,
+            colors=colors,
+        )
+        self._idle_suspend_enabled_check.grid(row=5, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
+
+        self._make_body_label(detail_content, "無操作と判定するまで（秒）", colors, row=6, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._idle_suspend_sec_var = tk.IntVar(value=self._config.get("idle_suspend_sec", 180))
+        self._idle_suspend_sec_spinbox = ttk.Spinbox(
+            detail_content, from_=30, to=1800, increment=30,
+            textvariable=self._idle_suspend_sec_var, width=10,
+        )
+        self._idle_suspend_sec_spinbox.grid(row=6, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
+
+        self._make_body_label(
+            detail_content, "Windows のスリープ設定より短くしてください", colors,
+            row=7, column=1, sticky=tk.W, padx=6, pady=(0, _PAD_ROW[1]),
+        )
+
+        self._make_body_label(detail_content, "他アプリ使用中は継続", colors, row=8, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._mic_share_monitor_enabled_var = tk.BooleanVar(
+            value=self._config.get("mic_share_monitor_enabled", True))
+        self._mic_share_monitor_enabled_check = self._make_checkbutton(
+            detail_content,
+            text="他のアプリがマイクを使用中は監視を続ける",
+            variable=self._mic_share_monitor_enabled_var,
+            command=self._mark_dirty,
+            colors=colors,
+        )
+        self._mic_share_monitor_enabled_check.grid(row=8, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
+
+        self._make_body_label(
+            detail_content, "マイクを開いたままだと Windows がスリープしません", colors,
+            row=9, column=1, sticky=tk.W, padx=6, pady=(0, _PAD_INNER),
+        )
+
+        self._make_headline_label(
+            detail_content,
+            text="アプリ設定",
+            colors=colors,
+            row=10, column=0, columnspan=2, sticky=tk.W, pady=(_PAD_ROW[0], _PAD_INNER),
+        )
+
+        self._make_body_label(detail_content, "テーマ", colors, row=11, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
         self._theme_var = tk.StringVar(value=self._config.get("theme", "system"))
         self._theme_combo = ttk.Combobox(detail_content, textvariable=self._theme_var, values=["system", "light", "dark"], state="readonly", width=10)
-        self._theme_combo.grid(row=5, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._theme_combo.grid(row=11, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW)
+
+        self._make_body_label(detail_content, "バージョン", colors, row=12, column=0, sticky=tk.W, padx=6, pady=_PAD_ROW)
+        self._make_body_label(
+            detail_content, version.version_line(), colors,
+            row=12, column=1, sticky=tk.W, padx=6, pady=_PAD_ROW,
+        )
 
     def _build_button_area(self):
         colors = get_colors(self._resolve_theme())
@@ -635,6 +714,15 @@ class SettingsGUI:
             foreground=colors["secondary_label"],
         )
         self._save_status_label.pack(side=tk.LEFT, padx=8)
+
+        self._version_label = tk.Label(
+            btn_frame,
+            text=version.version_line(),
+            font=theme.FONTS["caption"],
+            background=colors["bg"],
+            foreground=colors["secondary_label"],
+        )
+        self._version_label.pack(side=tk.RIGHT, padx=8)
 
     # -------------------------------------------------------------------------
     # イベントハンドラ
@@ -912,6 +1000,10 @@ class SettingsGUI:
             self._config["auto_pause_enabled"] = self._auto_pause_enabled_var.get()
             self._config["auto_pause_alert_count"] = self._read_int(
                 self._auto_pause_alert_count_var, "auto_pause_alert_count", 1, 10)
+            self._config["idle_suspend_enabled"] = self._idle_suspend_enabled_var.get()
+            self._config["idle_suspend_sec"] = self._read_int(
+                self._idle_suspend_sec_var, "idle_suspend_sec", 30, 1800)
+            self._config["mic_share_monitor_enabled"] = self._mic_share_monitor_enabled_var.get()
 
             self._on_config_save(self._config)
 
@@ -939,7 +1031,7 @@ class SettingsGUI:
     def _toggle_monitor(self):
         if self._on_toggle_monitor is not None:
             self._on_toggle_monitor()
-            self._monitor_btn_var.set("監視 停止" if self._monitor.is_running else "監視 開始")
+            self._monitor_btn_var.set("監視 停止" if self._monitoring_active() else "監視 開始")
         elif not self._monitor.is_running:
             self._monitor.start()
             self._monitor_btn_var.set("監視 停止")
@@ -956,6 +1048,16 @@ class SettingsGUI:
         if resolved_theme == "system":
             resolved_theme = get_system_theme()
         colors = get_colors(resolved_theme)
+
+        # 自動停止は監視ボタンを押さずに起きるため、トグル時だけの更新では
+        # 表示が実態とずれる。ポーリングのたびに合わせ直す。
+        self._monitor_btn_var.set("監視 停止" if self._monitoring_active() else "監視 開始")
+
+        if self._is_suspended is not None and self._is_suspended():
+            self._status_label.config(
+                text="⏸ 自動停止中（PC 無操作）", foreground=colors["warning"]
+            )
+            return
 
         if not self._monitor.is_running:
             self._status_label.config(text="○ 停止中", foreground=colors["secondary_label"])
