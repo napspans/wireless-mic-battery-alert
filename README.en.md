@@ -77,7 +77,7 @@ The right-click menu offers the settings window, monitoring start/stop, opening 
 
 | Setting | Description |
 |---|---|
-| Input device | The wireless receiver to monitor |
+| Input device | The wireless receiver to monitor. Stored by name, since PortAudio indices shift when devices are re-enumerated |
 | Alert interval (sec) | How often to repeat the alert while the signal is gone |
 | Volume | Notification volume (0–100) |
 | Alert sound | Played when signal loss is detected |
@@ -93,6 +93,8 @@ The right-click menu offers the settings window, monitoring start/stop, opening 
 Settings save automatically on change; the save time and the version are shown at the bottom of the window.
 
 `config.json` sits next to the executable. The tray right-click menu has an "open config file location" entry.
+
+If the configured receiver cannot be found, the app falls back to the WASAPI default device, so monitoring survives a sleep cycle or a replugged USB device even when the index changes.
 
 Signal loss and signal return each require one second of confirmation, so brief radio dropouts and the link-establishment period after power-on do not trigger false alerts. These are internal constants rather than settings.
 
@@ -119,6 +121,7 @@ wireless-mic-battery-alert/
     ├── test_suspend_flow.py
     ├── test_gui_build.py
     ├── test_resume_no_alert.py
+    ├── test_device_resolve.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
@@ -168,6 +171,7 @@ python test_phase10.py
 python test_suspend_flow.py
 python test_gui_build.py
 python test_resume_no_alert.py
+python test_device_resolve.py
 ```
 
 These cover idle detection, microphone-usage lookup, automatic stop and resume, and settings-window construction. Run them on Windows.

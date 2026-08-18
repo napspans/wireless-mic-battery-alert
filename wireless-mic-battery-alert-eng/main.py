@@ -94,7 +94,10 @@ class App:
         self._play(self._config.get("monitor_resume_sound_path", "builtin:notify_11"))
 
     def _on_config_save(self, new_config: dict):
-        device_changed = new_config.get('device_index') != self._config.get('device_index')
+        device_changed = (
+            new_config.get('device_index') != self._config.get('device_index')
+            or new_config.get('device_name') != self._config.get('device_name')
+        )
         settings.save(new_config)
         self._config.update(new_config)
         if not device_changed:

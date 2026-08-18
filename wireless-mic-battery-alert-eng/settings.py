@@ -23,9 +23,10 @@ def resolve_app_path(path: str) -> str:
     return os.path.normpath(os.path.join(get_app_dir(), path))
 
 DEFAULT_CONFIG = {
-    # デバイスは環境ごとに番号が変わるため既定を持たない。未設定時は
-    # resolve_input_device() が WASAPI の既定デバイスを選ぶ。
+    # デバイス番号は再列挙で変わるため、名前を正とし番号は補助に留める。
+    # どちらも未設定なら resolve_input_device() が WASAPI の既定を選ぶ。
     "device_index": None,
+    "device_name": None,
     "digital_silence_ratio": 0.5,
     "alert_interval_sec": 10,
     "alert_sound_path": "builtin:error",

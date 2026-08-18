@@ -77,7 +77,7 @@ Windows 11 の **Voice Clarity**（キャプチャ経路に挿入される AI �
 
 | 項目 | 説明 |
 |---|---|
-| 入力デバイス | 監視するワイヤレスマイクの受信機 |
+| 入力デバイス | 監視するワイヤレスマイクの受信機。デバイス番号は再列挙で変わるため、設定には名前を保存します |
 | アラート間隔 (秒) | 信号途絶が続く間、アラートを繰り返す間隔 |
 | 全体音量 | 通知音の音量（0〜100） |
 | 通知音 | 電池切れ検知時に鳴らす音 |
@@ -93,6 +93,8 @@ Windows 11 の **Voice Clarity**（キャプチャ経路に挿入される AI �
 設定は変更すると自動保存されます。画面下部に保存時刻とバージョンが表示されます。
 
 設定ファイル `config.json` は実行ファイルと同じ場所に保存されます。タスクトレイの右クリックメニュー「設定ファイルの場所を開く」から辿れます。
+
+設定した受信機が見つからない場合は、WASAPI の既定デバイスへ自動的に切り替えます。スリープ復帰や USB の抜き差しでデバイス番号が変わっても監視を続けられます。
 
 信号途絶と復帰の判定にはそれぞれ 1 秒の猶予があり、無線の瞬断や電源投入直後のリンク確立中に誤って反応しません。この値は設定項目ではなく内部定数です。
 
@@ -119,6 +121,7 @@ wireless-mic-battery-alert/
     ├── test_suspend_flow.py
     ├── test_gui_build.py
     ├── test_resume_no_alert.py
+    ├── test_device_resolve.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
@@ -170,6 +173,7 @@ python test_phase10.py
 python test_suspend_flow.py
 python test_gui_build.py
 python test_resume_no_alert.py
+python test_device_resolve.py
 ```
 
 無操作判定・マイク使用状況の取得・監視の自動停止と再開・設定画面の構築を確認します。Windows 環境で実行してください。

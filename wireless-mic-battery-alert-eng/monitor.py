@@ -1,11 +1,29 @@
+import logging
 import threading
 import time
 
 import numpy as np
 import sounddevice as sd
 
+logger = logging.getLogger(__name__)
+
 # dB表示・計測の下限。無音時のRMSは0になりうるため、この値でクランプする。
 DB_FLOOR = -160.0
+
+
+def refresh_devices() -> None:
+    """PortAudio のデバイス一覧を取り直す。
+
+    一覧は初期化時に作られ、以後キャッシュされる。スリープ復帰や USB の
+    抜き差しでデバイスが再列挙されても、常駐したままのプロセスは古い一覧を
+    見続けるため、番号が実体とずれる。ストリームを開いていない間に限って
+    呼ぶこと。
+    """
+    try:
+        sd._terminate()
+        sd._initialize()
+    except Exception:
+        logger.warning("デバイス一覧の再取得に失敗しました", exc_info=True)
 
 
 def list_input_devices() -> list[dict]:
@@ -36,26 +54,51 @@ def list_input_devices() -> list[dict]:
 
         is_default = default_name is not None and dev["name"] == default_name
         name = dev["name"]
-        if is_default:
-            name = f"{name}（既定）"
-        result.append({"index": i, "name": name, "is_default": is_default})
+        display = f"{name}（既定）" if is_default else name
+        result.append({
+            "index": i,
+            "name": display,
+            "raw_name": name,
+            "is_default": is_default,
+        })
     return result
 
 
-def resolve_input_device(device_index: int | None) -> int | None:
-    """未設定時に PortAudio 既定(MME等)へ落ちるのを防ぎ、一覧と同じ
-    WASAPI デバイスを明示的に選ぶ。
+def resolve_input_device(
+    device_index: int | None = None, device_name: str | None = None
+) -> int | None:
+    """監視対象の入力デバイスを決める。
 
-    MME/DirectSound 経由では信号途絶時も 16bit の ±1LSB ディザが乗り、
-    完全なデジタル無音にならないため、検出方式が成立しなくなる。
+    PortAudio 既定(MME等)へ落ちるのを防ぎ、一覧と同じ WASAPI デバイスを
+    明示的に選ぶ。MME/DirectSound 経由では信号途絶時も 16bit の ±1LSB
+    ディザが乗り、完全なデジタル無音にならないため検出が成立しない。
+
+    デバイス番号は再列挙で変わるため、名前での一致を優先する。保存された
+    番号は現在の一覧に含まれる場合のみ使う。実際に、以前 9 番だった受信機が
+    スリープ復帰後に 12 番へ移り、9 番が入力チャンネル 0 のスピーカーに
+    なっていた事例がある。番号だけを頼りにすると別のデバイスを黙って
+    監視し続けることになる。
     """
-    if device_index is not None:
-        return device_index
     candidates = list_input_devices()
     if not candidates:
         return None
+
+    if device_name:
+        matched = next((d for d in candidates if d["raw_name"] == device_name), None)
+        if matched is not None:
+            return matched["index"]
+        logger.warning("設定のデバイス「%s」が見つかりません", device_name)
+
+    if device_index is not None:
+        matched = next((d for d in candidates if d["index"] == device_index), None)
+        if matched is not None:
+            return matched["index"]
+        logger.warning("設定のデバイス番号 %s は現在有効ではありません", device_index)
+
     default = next((d for d in candidates if d["is_default"]), None)
-    return (default or candidates[0])["index"]
+    chosen = (default or candidates[0])
+    logger.info("入力デバイスを自動選択しました: %s", chosen["raw_name"])
+    return chosen["index"]
 
 
 class AudioMonitor:
@@ -201,7 +244,12 @@ class AudioMonitor:
             self._last_db = DB_FLOOR
             self._zero_ratio = 0.0
 
-        device = resolve_input_device(self._config.get("device_index", None))
+        # 一覧を取り直してから選ぶ。復帰直後は番号が変わっていることがある。
+        refresh_devices()
+        device = resolve_input_device(
+            self._config.get("device_index", None),
+            self._config.get("device_name", None),
+        )
         device_info = sd.query_devices(device, kind="input")
         self._SAMPLERATE = int(device_info["default_samplerate"])
         self._CHANNELS = max(1, min(2, int(device_info["max_input_channels"])))

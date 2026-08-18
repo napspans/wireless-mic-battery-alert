@@ -986,6 +986,7 @@ class SettingsGUI:
         self._suspend_dirty = True
         try:
             self._config["device_index"] = self._selected_device_index()
+            self._config["device_name"] = self._selected_device_name()
             self._config["alert_interval_sec"] = self._read_int(
                 self._interval_var, "alert_interval_sec", 5, 600)
             self._config["alert_sound_path"] = self._get_sound_path_value()
@@ -1023,10 +1024,17 @@ class SettingsGUI:
         finally:
             self._suspend_dirty = False
 
-    def _selected_device_index(self) -> int | None:
+    def _selected_device(self) -> dict | None:
         selected = self._device_var.get()
-        matched = next((d for d in self._devices if d["name"] == selected), None)
+        return next((d for d in self._devices if d["name"] == selected), None)
+
+    def _selected_device_index(self) -> int | None:
+        matched = self._selected_device()
         return matched["index"] if matched else self._config.get("device_index")
+
+    def _selected_device_name(self) -> str | None:
+        matched = self._selected_device()
+        return matched["raw_name"] if matched else self._config.get("device_name")
 
     def _toggle_monitor(self):
         if self._on_toggle_monitor is not None:
