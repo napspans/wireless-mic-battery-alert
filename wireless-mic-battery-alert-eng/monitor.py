@@ -148,6 +148,14 @@ class AudioMonitor:
                             self._paused = True
                             if self._on_auto_pause:
                                 self._on_auto_pause()
+            elif self._warmup_start is not None and (now - self._warmup_start) < self._WARMUP_SEC:
+                # ウォームアップ中は「信号あり」を信用しない。start() 直後は
+                # _is_silent が False で始まるため、デバイスが最初のブロックを
+                # 返す前にここへ入る。スリープ復帰のようにデバイスの再開が遅い
+                # 場面では、それだけで一時停止が解除され、直後に本物の無音が
+                # 届いてアラートが鳴り直す。
+                silence_start = None
+                signal_back_start = None
             else:
                 silence_start = None
                 if signal_back_start is None:

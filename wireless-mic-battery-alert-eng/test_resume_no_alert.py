@@ -104,6 +104,39 @@ time.sleep(0.5)
 check("信号が戻れば一時停止が解除される", app._monitor.is_paused is False)
 check("復帰サウンドは鳴る", "resume" in events, str(events))
 
+# --- スリープ復帰の再現 ---------------------------------------------------
+# 復帰直後はデバイスの再開が遅く、最初のブロックが届くまで数秒かかる。
+# start() は _is_silent=False で始まるため、その間「信号あり」に見える。
+app._monitor.stop()
+app._monitor._paused = True          # 送信機OFFで一時停止済みの状態
+app._monitor._alert_count = 1
+app._monitor._WARMUP_SEC = 1.0
+events.clear()
+
+app._monitor.start(preserve_state=True)
+set_signal(app._monitor, False)      # デバイスがまだ何も返していない
+time.sleep(0.6)                      # SIGNAL_BACK_SEC(0.05) は既に超えている
+check("復帰直後の無反応を「信号が戻った」と誤認しない",
+      app._monitor.is_paused is True and "resume" not in events, str(events))
+
+set_signal(app._monitor, True)       # デバイスが動き出し、実際は無音だった
+time.sleep(0.8)
+check("その後アラートが鳴り直さない", "alert" not in events, str(events))
+check("一時停止のままである", app._monitor.is_paused is True)
+app._monitor.stop()
+app._monitor._WARMUP_SEC = 0.05
+
+# ウォームアップを抜けた後は、本当に信号が戻れば復帰する
+app._monitor._paused = True
+app._monitor.start(preserve_state=True)
+time.sleep(0.2)
+events.clear()
+set_signal(app._monitor, False)
+time.sleep(0.4)
+check("ウォームアップ後は本物の復帰を拾う",
+      app._monitor.is_paused is False and "resume" in events, str(events))
+app._monitor.stop()
+
 # 手動で開始した場合は従来どおりリセットされる
 app._monitor.stop()
 app._monitor._paused = True
