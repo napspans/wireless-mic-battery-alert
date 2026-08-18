@@ -40,6 +40,8 @@ Windows 11 の **Voice Clarity**（キャプチャ経路に挿入される AI �
 
 無操作と判定するまでの秒数は、お使いの環境の Windows スリープ設定より短く設定してください（既定は 180 秒）。
 
+なお、スリープを妨げる要因はこのアプリだけではありません。動画を再生しているブラウザや、音声を出している他のアプリも電源要求を立てます。スリープしない場合は、管理者権限で `powercfg /requests` を実行すると、どのデバイスやプロセスが要求を立てているか確認できます。
+
 ## 主な機能
 
 - 入力デバイス選択（WASAPI）
@@ -116,6 +118,7 @@ wireless-mic-battery-alert/
     ├── test_phase10.py
     ├── test_suspend_flow.py
     ├── test_gui_build.py
+    ├── test_resume_no_alert.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
@@ -166,6 +169,7 @@ cd wireless-mic-battery-alert-eng
 python test_phase10.py
 python test_suspend_flow.py
 python test_gui_build.py
+python test_resume_no_alert.py
 ```
 
 無操作判定・マイク使用状況の取得・監視の自動停止と再開・設定画面の構築を確認します。Windows 環境で実行してください。

@@ -5,7 +5,7 @@ APP_VERSION と APP_UPDATED を必ず同時に更新する。
 """
 
 APP_NAME = "マイク電池切れ警告"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.1.1"
 # 最終バージョン更新日 (YYYY-MM-DD)
 APP_UPDATED = "2026-08-18"
 

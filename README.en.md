@@ -40,6 +40,8 @@ This app stops monitoring and closes the stream once the PC has been idle, then 
 
 Set the idle threshold shorter than the machine's Windows sleep timeout (the default is 180 seconds).
 
+This app is not the only thing that can keep a machine awake: a browser playing video, or any app producing audio, raises its own power request. When the machine will not sleep, run `powercfg /requests` from an elevated prompt to see which device or process is holding it.
+
 ## Main Features
 
 - Input device selection (WASAPI)
@@ -116,6 +118,7 @@ wireless-mic-battery-alert/
     ├── test_phase10.py
     ├── test_suspend_flow.py
     ├── test_gui_build.py
+    ├── test_resume_no_alert.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
@@ -164,6 +167,7 @@ cd wireless-mic-battery-alert-eng
 python test_phase10.py
 python test_suspend_flow.py
 python test_gui_build.py
+python test_resume_no_alert.py
 ```
 
 These cover idle detection, microphone-usage lookup, automatic stop and resume, and settings-window construction. Run them on Windows.
