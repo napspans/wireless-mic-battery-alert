@@ -175,10 +175,17 @@ class AudioMonitor:
         with self._silence_lock:
             return self._last_db, self._zero_ratio
 
-    def start(self) -> None:
+    def start(self, preserve_state: bool = False) -> None:
+        """監視を開始する。
+
+        preserve_state を立てると、一時停止していた事実とアラート回数を
+        引き継ぐ。無操作による自動停止からの再開で状態を戻してしまうと、
+        送信機を切ったまま席に戻るたびにアラートが鳴り直す。
+        """
         self._stop_event.clear()
-        self._alert_count = 0
-        self._paused = False
+        if not preserve_state:
+            self._alert_count = 0
+            self._paused = False
         self._warmup_start = time.monotonic()
 
         with self._silence_lock:

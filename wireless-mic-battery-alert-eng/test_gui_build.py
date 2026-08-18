@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import numpy as np
 import settings
+import version
 from gui import SettingsGUI
 from monitor import DB_FLOOR
 
@@ -55,7 +56,7 @@ check("設定画面が例外なく構築できる", True)
 check("無操作自動停止のチェックが既定でオン", gui._idle_suspend_enabled_var.get() is True)
 check("無操作しきい値の既定が 180", gui._idle_suspend_sec_var.get() == 180)
 check("他アプリ継続のチェックが既定でオン", gui._mic_share_monitor_enabled_var.get() is True)
-check("バージョン表記が画面にある", "1.1.0" in gui._version_label.cget("text"),
+check("バージョン表記が画面にある", version.APP_VERSION in gui._version_label.cget("text"),
       gui._version_label.cget("text"))
 
 # 監視中の表示

@@ -32,11 +32,12 @@ class FakeMonitor:
     def is_paused(self):
         return False
 
-    def start(self):
+    def start(self, preserve_state: bool = False):
         if self.fail_start:
             raise RuntimeError("device busy")
         self.running = True
         self.starts += 1
+        self.preserved = preserve_state
 
     def stop(self):
         self.running = False
@@ -129,6 +130,7 @@ app._monitor.fail_start = False
 app._evaluate_idle_suspend()
 check("次の巡回で再開に成功する",
       app._suspended is False and app._monitor.running is True)
+check("自動再開では一時停止状態を引き継ぐ", app._monitor.preserved is True)
 
 # --- 6. 他アプリ使用中は継続（案2） -----------------------------------------
 app = make_app(idle=9999, mic_shared=True)

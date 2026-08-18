@@ -21,6 +21,8 @@ class App:
     _ALERT_DISPLAY_SEC = 5.0
     # 無操作判定の巡回間隔。しきい値は分単位なので細かく見る必要はない。
     _IDLE_POLL_SEC = 5.0
+    # 通知音がこの秒数鳴らなければ、オーディオ出力デバイスを手放す。
+    _MIXER_IDLE_SEC = 20.0
 
     def __init__(self):
         self._base_dir = settings.get_app_dir()
@@ -62,7 +64,12 @@ class App:
 
     def _sound_worker(self) -> None:
         while not self._quit_event.is_set():
-            item = self._sound_queue.get()
+            try:
+                item = self._sound_queue.get(timeout=self._MIXER_IDLE_SEC)
+            except queue.Empty:
+                # 鳴らす予定がない間は出力デバイスを手放す。
+                self._notifier.release()
+                continue
             if item is None:
                 break
             sound_path, volume = item
@@ -225,7 +232,8 @@ class App:
             if not self._suspended:
                 return
             try:
-                self._monitor.start()
+                # 一時停止していたなら、その状態のまま再開する
+                self._monitor.start(preserve_state=True)
             except Exception:
                 # スリープ復帰直後はデバイスが戻りきっていないことがある。
                 # ダイアログを出さず、次の巡回で開き直す。
