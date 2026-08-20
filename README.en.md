@@ -1,6 +1,6 @@
 # wireless-mic-battery-alert
 
-[日本語 README](./README.md)
+[日本語](./README.md) · [English](./README.en.md) · [한국어](./README.ko.md) · [简体中文](./README.zh.md) · [Français](./README.fr.md)
 
 A Windows application that detects wireless microphone battery drain and connection loss by watching for signal dropout at the receiver, and alerts the user.
 
@@ -9,6 +9,7 @@ A Windows application that detects wireless microphone battery drain and connect
 - Watches the wireless receiver and alerts when the transmitter's signal stops
 - Lets users configure alert, pause, stop, and resume sounds
 - Stays resident without preventing Windows from sleeping
+- Available in 日本語, English, 한국어, 简体中文, and Français
 - Targets Windows `.exe` distribution
 
 ## How Detection Works
@@ -53,6 +54,8 @@ This app is not the only thing that can keep a machine awake: a browser playing 
 - Idle-linked automatic stop and resume, so the machine can still sleep
 - Live input level readout (dB and zero-sample ratio)
 - Task tray integration (state-colored icon, shortcuts to the config file and log)
+- Interface language switching (日本語 / English / 한국어 / 简体中文 / Français)
+- Light and dark themes, following the Windows setting
 - Windows EXE build support
 
 ## Task Tray
@@ -88,7 +91,10 @@ The right-click menu offers the settings window, monitoring start/stop, opening 
 | Stop when idle | Stop monitoring once the PC has been idle (on by default) |
 | Idle threshold (sec) | Defaults to 180 (range 30–1800) |
 | Keep going for other apps | Keep monitoring while another app uses the microphone (on by default) |
-| Theme | system / light / dark |
+| Theme | Match system / Light / Dark |
+| Language | 日本語 / English / 한국어 / 简体中文 / Français |
+
+The language applies the moment it is picked — no restart. On first launch the app infers it from the Windows locale, falling back to English when there is no translation for that locale.
 
 Settings save automatically on change; the save time and the version are shown at the bottom of the window.
 
@@ -127,6 +133,8 @@ wireless-mic-battery-alert/
     ├── assets/
     ├── main.py
     ├── gui.py
+    ├── i18n.py
+    ├── theme.py
     ├── monitor.py
     ├── notifier.py
     ├── settings.py
@@ -140,6 +148,7 @@ wireless-mic-battery-alert/
     ├── test_resume_no_alert.py
     ├── test_device_resolve.py
     ├── test_logging.py
+    ├── test_i18n.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
@@ -154,6 +163,8 @@ wireless-mic-battery-alert/
 | `notifier.py` | Notification sound resolution and playback |
 | `settings.py` | Config file load and save |
 | `gui.py` | Settings window |
+| `i18n.py` | Translation catalog and language switching |
+| `theme.py` | Colors and fonts in one place |
 | `tray.py` | Task tray integration |
 | `version.py` | Version information |
 
@@ -192,9 +203,10 @@ python test_gui_build.py
 python test_resume_no_alert.py
 python test_device_resolve.py
 python test_logging.py
+python test_i18n.py
 ```
 
-These cover idle detection, microphone-usage lookup, automatic stop and resume, and settings-window construction. Run them on Windows.
+These cover idle detection, microphone-usage lookup, automatic stop and resume, settings-window construction, translation-catalog consistency, and building the window in all five languages. Run them on Windows.
 
 ## Screenshot
 

@@ -54,10 +54,11 @@ def list_input_devices() -> list[dict]:
 
         is_default = default_name is not None and dev["name"] == default_name
         name = dev["name"]
-        display = f"{name}（既定）" if is_default else name
+        # 「（既定）」のような表示上の注記はここでは付けない。表示は言語に
+        # よって変わるため、翻訳を持つ GUI 側で組み立てる。
         result.append({
             "index": i,
-            "name": display,
+            "name": name,
             "raw_name": name,
             "is_default": is_default,
         })

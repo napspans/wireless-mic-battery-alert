@@ -10,7 +10,9 @@ from tkinter import messagebox
 
 import activity
 import applog
+import i18n
 import settings
+from i18n import t
 from monitor import AudioMonitor
 from notifier import Notifier
 from tray import TrayIcon
@@ -103,9 +105,18 @@ class App:
             new_config.get('device_index') != self._config.get('device_index')
             or new_config.get('device_name') != self._config.get('device_name')
         )
+        # 設定画面は選択の瞬間に i18n を切り替えるため、現在の言語と比べても
+        # 常に一致してしまう。保存前の設定と比べる。
+        language_changed = new_config.get("language") != self._config.get("language")
         settings.save(new_config)
         self._config.update(new_config)
         applog.set_debug(self._config.get("debug_log", False))
+        if language_changed:
+            # 設定画面は自前で訳し直すが、トレイは別プロセス相当の存在で
+            # あり、こちらから知らせないと古い言語のまま残る。
+            i18n.set_language(new_config.get("language") or i18n.get_language())
+            if self._tray is not None:
+                self._tray.refresh_language()
         if not device_changed:
             return
         logger.info(
@@ -179,11 +190,7 @@ class App:
 
     def _on_stream_error(self, error_message: str) -> None:
         logger.exception("Audio stream failed to start: %s", error_message)
-        message = (
-            "入力デバイスを開始できませんでした。\n\n"
-            f"{error_message}\n\n"
-            "設定画面を開くので、入力デバイスを再選択してください。"
-        )
+        message = t("error.device_body", error=error_message)
 
         with self._gui_lock:
             gui = self._gui
@@ -192,7 +199,7 @@ class App:
             def show_dialog() -> None:
                 try:
                     messagebox.showerror(
-                        "入力デバイスエラー",
+                        t("error.device_title"),
                         message,
                         parent=gui._root,
                     )
@@ -206,7 +213,7 @@ class App:
         temp_root.withdraw()
         temp_root.attributes("-topmost", True)
         try:
-            messagebox.showerror("入力デバイスエラー", message, parent=temp_root)
+            messagebox.showerror(t("error.device_title"), message, parent=temp_root)
         finally:
             temp_root.destroy()
 
@@ -332,6 +339,10 @@ class App:
     def run(self):
         self._config = settings.load()
         applog.set_debug(self._config.get("debug_log", False))
+        # 未選択なら OS のロケールから推定する。以後は設定画面での選択が正。
+        language = self._config.get("language") or i18n.detect_system_language()
+        self._config["language"] = language
+        i18n.set_language(language)
         logger.info(
             "起動しました v%s (%s) 設定=%s",
             version.APP_VERSION, version.APP_UPDATED, settings.get_config_path(),

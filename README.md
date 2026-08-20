@@ -1,6 +1,6 @@
 # wireless-mic-battery-alert
 
-[English README](./README.en.md)
+[日本語](./README.md) · [English](./README.en.md) · [한국어](./README.ko.md) · [简体中文](./README.zh.md) · [Français](./README.fr.md)
 
 ワイヤレスマイクの電池切れや接続異常を、受信機からの信号途絶によって検知し、ユーザーへ通知する Windows アプリケーションです。
 
@@ -9,6 +9,7 @@
 - ワイヤレスマイクの受信機を監視し、送信機からの信号が途絶えると通知します
 - 通知音、一時停止音、監視停止音、監視再開音を設定できます
 - 常駐していても Windows のスリープを妨げません
+- 画面表示は日本語・English・한국어・简体中文・Français に対応します
 - Windows 向け `.exe` 配布を前提にしています
 
 ## 検出方式
@@ -53,6 +54,8 @@ Windows 11 の **Voice Clarity**（キャプチャ経路に挿入される AI �
 - PC の無操作に連動した監視の自動停止・再開（スリープ阻害の回避）
 - 現在の入力レベル（dB / ゼロ率）のライブ表示
 - タスクトレイ常駐（状態を色で示すアイコン、設定ファイルとログへの導線）
+- 表示言語の切り替え（日本語 / English / 한국어 / 简体中文 / Français）
+- ライト / ダークテーマ（Windows の設定に追随）
 - Windows 用 EXE ビルド
 
 ## タスクトレイ
@@ -88,7 +91,10 @@ Windows 11 の **Voice Clarity**（キャプチャ経路に挿入される AI �
 | 無操作で自動停止 | PC の無操作が続いたら監視を止める（既定は有効） |
 | 無操作と判定するまで (秒) | 既定は 180 秒（30〜1800） |
 | 他アプリ使用中は継続 | 他のアプリがマイクを使用中は監視を続ける（既定は有効） |
-| テーマ | system / light / dark |
+| テーマ | システムに合わせる / ライト / ダーク |
+| 言語 | 日本語 / English / 한국어 / 简体中文 / Français |
+
+言語は選んだ瞬間に画面へ反映されます。再起動は不要です。初回起動時は Windows のロケールから推定し、対応する翻訳がなければ英語を使います。
 
 設定は変更すると自動保存されます。画面下部に保存時刻とバージョンが表示されます。
 
@@ -127,6 +133,8 @@ wireless-mic-battery-alert/
     ├── assets/
     ├── main.py
     ├── gui.py
+    ├── i18n.py
+    ├── theme.py
     ├── monitor.py
     ├── notifier.py
     ├── settings.py
@@ -140,6 +148,7 @@ wireless-mic-battery-alert/
     ├── test_resume_no_alert.py
     ├── test_device_resolve.py
     ├── test_logging.py
+    ├── test_i18n.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
@@ -154,6 +163,8 @@ wireless-mic-battery-alert/
 | `notifier.py` | 通知音の解決と再生 |
 | `settings.py` | 設定ファイルの読込・保存 |
 | `gui.py` | 設定画面 |
+| `i18n.py` | 表示文字列の翻訳カタログと言語の切り替え |
+| `theme.py` | 配色・フォントの一元管理 |
 | `tray.py` | タスクトレイ常駐 |
 | `version.py` | バージョン情報 |
 
@@ -194,9 +205,10 @@ python test_gui_build.py
 python test_resume_no_alert.py
 python test_device_resolve.py
 python test_logging.py
+python test_i18n.py
 ```
 
-無操作判定・マイク使用状況の取得・監視の自動停止と再開・設定画面の構築を確認します。Windows 環境で実行してください。
+無操作判定・マイク使用状況の取得・監視の自動停止と再開・設定画面の構築、翻訳カタログの整合と5言語での画面構築を確認します。Windows 環境で実行してください。
 
 ## スクリーンショット
 

@@ -1,6 +1,10 @@
 import pystray
 from PIL import Image, ImageDraw
 
+import appicon
+import i18n
+from i18n import t
+
 # 状態ごとの背景グラデーション (上, 下)。
 _ICON_GRADIENTS = {
     "idle": ("#94A3B8", "#64748B"),
@@ -12,90 +16,20 @@ _ICON_GRADIENTS = {
 }
 
 _SIZE = 64
-# 一度大きく描いて縮小することで、PIL に無いアンチエイリアスを補う。
-_SUPERSAMPLE = 4
 
 _ICON_CACHE: dict[str, Image.Image] = {}
 
 
-def _hex_to_rgb(value: str) -> tuple[int, int, int]:
-    value = value.lstrip("#")
-    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
-
-
-def _vertical_gradient(size: int, top: str, bottom: str) -> Image.Image:
-    top_rgb = _hex_to_rgb(top)
-    bottom_rgb = _hex_to_rgb(bottom)
-    column = Image.new("RGB", (1, size))
-    for y in range(size):
-        ratio = y / (size - 1)
-        column.putpixel(
-            (0, y),
-            tuple(
-                round(a + (b - a) * ratio)
-                for a, b in zip(top_rgb, bottom_rgb)
-            ),
-        )
-    return column.resize((size, size))
-
-
-def _draw_microphone(draw: ImageDraw.ImageDraw, size: int) -> None:
-    white = (255, 255, 255, 255)
-    center_x = size / 2
-    stroke = max(1, round(size * 0.055))
-
-    # 本体（カプセル）
-    capsule_w = size * 0.26
-    capsule_top = size * 0.19
-    capsule_h = size * 0.38
-    draw.rounded_rectangle(
-        [
-            center_x - capsule_w / 2,
-            capsule_top,
-            center_x + capsule_w / 2,
-            capsule_top + capsule_h,
-        ],
-        radius=capsule_w / 2,
-        fill=white,
-    )
-
-    # 受け（下半円のアーチ）
-    arch_w = size * 0.46
-    arch_top = size * 0.40
-    arch_bottom = size * 0.70
-    draw.arc(
-        [center_x - arch_w / 2, arch_top, center_x + arch_w / 2, arch_bottom],
-        start=0,
-        end=180,
-        fill=white,
-        width=stroke,
-    )
-
-    # 支柱と台座
-    draw.line(
-        [center_x, arch_bottom - stroke / 2, center_x, size * 0.83],
-        fill=white,
-        width=stroke,
-    )
-    draw.line(
-        [center_x - size * 0.14, size * 0.83, center_x + size * 0.14, size * 0.83],
-        fill=white,
-        width=stroke,
-    )
-
-
 def _create_icon_image(state: str = "idle") -> Image.Image:
+    """状態色のトレイアイコン。図形はアプリアイコンと共通のマイクを使う。
+
+    トレイは状態を色で示すので、電池のバッジは重ねない。
+    """
     top, bottom = _ICON_GRADIENTS.get(state, _ICON_GRADIENTS["idle"])
-    size = _SIZE * _SUPERSAMPLE
+    size = _SIZE * appicon.SUPERSAMPLE
 
-    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(mask).rounded_rectangle(
-        [0, 0, size - 1, size - 1], radius=round(size * 0.28), fill=255
-    )
-    canvas.paste(_vertical_gradient(size, top, bottom), (0, 0), mask)
-
-    _draw_microphone(ImageDraw.Draw(canvas), size)
+    canvas = appicon.rounded_background(size, top, bottom)
+    appicon.draw_microphone(ImageDraw.Draw(canvas), size)
     return canvas.resize((_SIZE, _SIZE), Image.LANCZOS)
 
 
@@ -123,36 +57,41 @@ class TrayIcon:
         self._on_open_log = on_open_log
         self._state = "idle"
 
+        # ラベルは全て呼び出し時に評価する。文字列で固定すると、言語を
+        # 切り替えてもメニューだけ元の言語のまま取り残される。
         items = [
-            pystray.MenuItem("設定を開く", lambda icon, item: self._on_open_settings(), default=True),
+            pystray.MenuItem(lambda item: t("tray.open_settings"),
+                             lambda icon, item: self._on_open_settings(), default=True),
             pystray.MenuItem(
-                lambda item: "監視 停止" if self._is_monitoring() else "監視 開始",
+                lambda item: t("button.monitor_stop") if self._is_monitoring()
+                else t("button.monitor_start"),
                 lambda icon, item: self._on_toggle_monitor(),
             ),
         ]
         if on_open_config_location is not None:
             items.append(
                 pystray.MenuItem(
-                    "設定ファイルの場所を開く",
+                    lambda item: t("tray.open_config_location"),
                     lambda icon, item: self._on_open_config_location(),
                 )
             )
         if on_open_log is not None:
             items.append(
                 pystray.MenuItem(
-                    "ログを開く",
+                    lambda item: t("tray.open_log"),
                     lambda icon, item: self._on_open_log(),
                 )
             )
         items += [
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("終了", lambda icon, item: self._on_quit()),
+            pystray.MenuItem(lambda item: t("tray.quit"),
+                             lambda icon, item: self._on_quit()),
         ]
 
         self._icon = pystray.Icon(
             name="mic_battery_alert",
             icon=get_icon_image("idle"),
-            title="マイク電池切れ警告",
+            title=i18n.APP_NAME,
             menu=pystray.Menu(*items),
         )
 
@@ -167,3 +106,15 @@ class TrayIcon:
             return
         self._state = state
         self._icon.icon = get_icon_image(state)
+
+    def refresh_language(self) -> None:
+        """言語切替をトレイのメニューに反映する。
+
+        ラベルは呼び出し時に訳されるが、Windows は開くまで再評価しない。
+        ツールチップはアプリ名（訳さない）なので入れ直す必要はない。
+        """
+        try:
+            self._icon.update_menu()
+        except Exception:
+            # トレイがまだ動いていない場合は次に開いたときに反映される。
+            pass

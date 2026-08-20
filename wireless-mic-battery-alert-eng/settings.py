@@ -37,6 +37,8 @@ DEFAULT_CONFIG = {
     "monitor_resume_sound_enabled": True,
     "monitor_resume_sound_path": "builtin:notify_11",
     "theme": "system",
+    # None は「まだ選ばれていない」。初回起動時に OS のロケールから推定する。
+    "language": None,
     "alert_volume": 50,
     "auto_pause_enabled": True,
     "auto_pause_alert_count": 1,
