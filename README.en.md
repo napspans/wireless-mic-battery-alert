@@ -52,7 +52,7 @@ This app is not the only thing that can keep a machine awake: a browser playing 
 - Automatic monitoring pause after an alert, with automatic resume when the signal returns
 - Idle-linked automatic stop and resume, so the machine can still sleep
 - Live input level readout (dB and zero-sample ratio)
-- Task tray integration (state-colored icon, shortcut to the config file)
+- Task tray integration (state-colored icon, shortcuts to the config file and log)
 - Windows EXE build support
 
 ## Task Tray
@@ -71,7 +71,7 @@ While resident, the tray icon shows the current state by color.
 
 The distinction between **orange and light blue** matters: orange only stops the alerts and keeps the microphone open, while light blue closes it. Only the light blue state lets the machine sleep.
 
-The right-click menu offers the settings window, monitoring start/stop, opening the config file location, and quit.
+The right-click menu offers the settings window, monitoring start/stop, opening the config file location, opening the log, and quit.
 
 ## Settings
 
@@ -98,6 +98,22 @@ If the configured receiver cannot be found, the app falls back to the WASAPI def
 
 Signal loss and signal return each require one second of confirmation, so brief radio dropouts and the link-establishment period after power-on do not trigger false alerts. These are internal constants rather than settings.
 
+## Logs
+
+The app writes to `logs/app.log` next to the executable. The tray right-click menu has an "open log" entry.
+
+Only state changes are recorded: startup and shutdown, monitoring start and stop (distinguishing manual from idle-linked), the resolved input device, alerts, auto-pause and its release, and failures.
+
+Since the app stays resident, three measures keep the log from growing without bound.
+
+| Measure | Detail |
+|---|---|
+| Size cap | 512KB × 3 generations; never exceeds 1.5MB in total |
+| Repeat collapsing | Consecutive identical records are dropped, with the count appended to the next line |
+| INFO by default | Nothing is written on every poll |
+
+Set `debug_log` to `true` in `config.json` for verbose output. It records each poll, so it is not meant for everyday use.
+
 ## Repository Layout
 
 ```text
@@ -115,6 +131,7 @@ wireless-mic-battery-alert/
     ├── notifier.py
     ├── settings.py
     ├── activity.py
+    ├── applog.py
     ├── tray.py
     ├── version.py
     ├── test_phase10.py
@@ -122,6 +139,7 @@ wireless-mic-battery-alert/
     ├── test_gui_build.py
     ├── test_resume_no_alert.py
     ├── test_device_resolve.py
+    ├── test_logging.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
@@ -132,6 +150,7 @@ wireless-mic-battery-alert/
 | `main.py` | Startup, config loading, monitor control, notification and tray/GUI wiring |
 | `monitor.py` | Input device monitoring and signal-dropout detection |
 | `activity.py` | PC idle time and other apps' microphone usage |
+| `applog.py` | Log output and size management |
 | `notifier.py` | Notification sound resolution and playback |
 | `settings.py` | Config file load and save |
 | `gui.py` | Settings window |
@@ -172,6 +191,7 @@ python test_suspend_flow.py
 python test_gui_build.py
 python test_resume_no_alert.py
 python test_device_resolve.py
+python test_logging.py
 ```
 
 These cover idle detection, microphone-usage lookup, automatic stop and resume, and settings-window construction. Run them on Windows.

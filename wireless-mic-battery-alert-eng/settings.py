@@ -46,6 +46,8 @@ DEFAULT_CONFIG = {
     # 各環境の Windows スリープ設定より短くないと機能しないため設定項目とする。
     "idle_suspend_sec": 180,
     "mic_share_monitor_enabled": True,
+    # 詳細ログ。巡回ごとの記録が増えるため常用は想定しない。
+    "debug_log": False,
 }
 
 # 旧キー -> 新キー。既存の config.json を読めるようにするための対応。

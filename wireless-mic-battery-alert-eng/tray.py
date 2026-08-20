@@ -113,12 +113,14 @@ def get_icon_image(state: str = "idle") -> Image.Image:
 class TrayIcon:
     def __init__(self, on_open_settings: callable, on_quit: callable,
                  on_toggle_monitor: callable, is_monitoring: callable,
-                 on_open_config_location: callable = None):
+                 on_open_config_location: callable = None,
+                 on_open_log: callable = None):
         self._on_open_settings = on_open_settings
         self._on_quit = on_quit
         self._on_toggle_monitor = on_toggle_monitor
         self._is_monitoring = is_monitoring
         self._on_open_config_location = on_open_config_location
+        self._on_open_log = on_open_log
         self._state = "idle"
 
         items = [
@@ -133,6 +135,13 @@ class TrayIcon:
                 pystray.MenuItem(
                     "設定ファイルの場所を開く",
                     lambda icon, item: self._on_open_config_location(),
+                )
+            )
+        if on_open_log is not None:
+            items.append(
+                pystray.MenuItem(
+                    "ログを開く",
+                    lambda icon, item: self._on_open_log(),
                 )
             )
         items += [

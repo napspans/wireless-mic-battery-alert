@@ -262,6 +262,10 @@ class AudioMonitor:
             callback=self._audio_callback,
         )
         self._stream.start()
+        logger.info(
+            "監視を開始しました: %s (%d Hz / %dch)",
+            device_info["name"], self._SAMPLERATE, self._CHANNELS,
+        )
 
         self._monitor_thread = threading.Thread(
             target=self._monitor_loop, daemon=True
@@ -279,6 +283,7 @@ class AudioMonitor:
             self._stream.stop()
             self._stream.close()
             self._stream = None
+            logger.info("入力ストリームを閉じました")
 
     def get_db_history(self) -> np.ndarray:
         with self._db_lock:

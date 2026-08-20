@@ -9,11 +9,13 @@ import tkinter as tk
 from tkinter import messagebox
 
 import activity
+import applog
 import settings
 from monitor import AudioMonitor
 from notifier import Notifier
 from tray import TrayIcon
 from gui import SettingsGUI
+import version
 
 logger = logging.getLogger(__name__)
 
@@ -79,16 +81,19 @@ class App:
                 logger.exception("通知音の再生に失敗しました: %s", sound_path)
 
     def _on_alert(self):
+        logger.info("信号途絶を検知しアラートを鳴らします")
         with self._alert_lock:
             self._last_alert_time = time.monotonic()
         self._play(self._config.get("alert_sound_path", "builtin:error"))
 
     def _on_auto_pause(self):
+        logger.info("アラート後に監視を自動一時停止しました")
         if not self._config.get("pause_sound_enabled", True):
             return
         self._play(self._config.get("pause_sound_path", "builtin:marimba"))
 
     def _on_auto_resume(self):
+        logger.info("信号が戻ったため一時停止を解除しました")
         if not self._config.get("pause_sound_enabled", True):
             return
         self._play(self._config.get("monitor_resume_sound_path", "builtin:notify_11"))
@@ -100,8 +105,12 @@ class App:
         )
         settings.save(new_config)
         self._config.update(new_config)
+        applog.set_debug(self._config.get("debug_log", False))
         if not device_changed:
             return
+        logger.info(
+            "入力デバイスの設定が変わりました: %s", new_config.get("device_name")
+        )
         with self._monitor_lock:
             # 自動停止中は意図的に閉じている。ここで開き直すと電源要求が復活する。
             # 次の再開時に新しいデバイスで開かれるため何もしなくてよい。
@@ -124,6 +133,17 @@ class App:
                 os.startfile(settings.get_app_dir())
         except Exception:
             logger.exception("設定ファイルの場所を開けませんでした: %s", config_path)
+
+    def _open_log(self) -> None:
+        """ログファイルを既定のエディタで開く。"""
+        path = applog.get_log_path()
+        try:
+            if path and os.path.exists(path):
+                os.startfile(path)
+            else:
+                os.startfile(settings.get_app_dir())
+        except Exception:
+            logger.exception("ログを開けませんでした: %s", path)
 
     def _run_gui(self):
         gui = SettingsGUI(
@@ -202,6 +222,7 @@ class App:
                     self._monitor.stop()
                 self._suspended = False
                 self._monitor_desired = False
+                logger.info("監視を停止しました（手動）")
                 if self._config.get("monitor_stop_sound_enabled", True):
                     sound = self._config.get("monitor_stop_sound_path", "builtin:marimba")
             else:
@@ -211,6 +232,7 @@ class App:
                     self._on_stream_error(str(exc))
                     return
                 self._monitor_desired = True
+                logger.info("監視を開始しました（手動）")
                 if self._config.get("monitor_resume_sound_enabled", True):
                     sound = self._config.get("monitor_resume_sound_path", "builtin:notify_11")
 
@@ -283,6 +305,7 @@ class App:
         return self._suspended
 
     def _quit(self):
+        logger.info("終了します")
         self._monitor.stop()
         self._tray.stop()
         self._quit_event.set()
@@ -308,6 +331,11 @@ class App:
 
     def run(self):
         self._config = settings.load()
+        applog.set_debug(self._config.get("debug_log", False))
+        logger.info(
+            "起動しました v%s (%s) 設定=%s",
+            version.APP_VERSION, version.APP_UPDATED, settings.get_config_path(),
+        )
         self._notifier = Notifier()
         self._monitor = AudioMonitor(
             self._config,
@@ -321,6 +349,7 @@ class App:
             on_toggle_monitor=self._toggle_monitor,
             is_monitoring=self._is_monitoring,
             on_open_config_location=self._open_config_location,
+            on_open_log=self._open_log,
         )
 
         try:
@@ -338,10 +367,5 @@ class App:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    logging.getLogger("matplotlib").setLevel(logging.WARNING)
+    applog.setup(settings.get_app_dir())
     App().run()
