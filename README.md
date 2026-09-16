@@ -1,126 +1,130 @@
 # wireless-mic-battery-alert
 
-[日本語](./README.md) · [English](./README.en.md) · [한국어](./README.ko.md) · [简体中文](./README.zh.md) · [Français](./README.fr.md)
+[日本語](./README.ja.md) · [English](./README.md) · [한국어](./README.ko.md) · [简体中文](./README.zh.md) · [Français](./README.fr.md)
 
-ワイヤレスマイクの電池切れや接続異常を、受信機からの信号途絶によって検知し、ユーザーへ通知する Windows アプリケーションです。
+A Windows application that detects wireless microphone battery drain and connection loss by watching for signal dropout at the receiver, and alerts the user.
 
-## 概要
+## Overview
 
-- ワイヤレスマイクの受信機を監視し、送信機からの信号が途絶えると通知します
-- 通知音、一時停止音、監視停止音、監視再開音を設定できます
-- 常駐していても Windows のスリープを妨げません
-- 画面表示は日本語・English・한국어・简体中文・Français に対応します
-- Windows 向け `.exe` 配布を前提にしています
+- Watches the wireless receiver and alerts when the transmitter's signal stops
+- Lets users configure alert, pause, stop, and resume sounds
+- Stays resident without preventing Windows from sleeping
+- Available in 日本語, English, 한국어, 简体中文, and Français
+- Targets Windows `.exe` distribution
 
-## 検出方式
+## How Detection Works
 
-送信機の電源が切れると、受信機は **完全なデジタル無音**（値が厳密に 0 のサンプル）を出力します。一方、送信機が生きている限りゼロサンプルは現れません。本アプリはこの差を判定に使います。
+When the transmitter powers off, the receiver emits **exact digital silence** — samples whose value is precisely zero. While the transmitter is alive, zero samples never appear. The app keys on that difference.
 
-実測値（BOYA mini / WASAPI 経由 / 各 10 秒）:
+Measured on a BOYA mini over WASAPI, 10 seconds per state:
 
-| 状態 | ゼロサンプルの割合 | 非ゼロの最小値 |
+| State | Zero samples | Smallest non-zero value |
 |---|---|---|
-| 送信機ON | 0.0000%（480,000 サンプル中 0 個） | 2.9e-14 |
-| 送信機OFF | 100.00% | 存在しない |
+| Transmitter on | 0.0000% (0 of 480,000) | 2.9e-14 |
+| Transmitter off | 100.00% | none |
 
-音量レベルに依存しないため、しきい値の調整が不要で、環境の静かさにも左右されません。
+Because the test does not depend on loudness, there is no threshold to tune and a quiet room does not affect it.
 
-### 音量しきい値を使わない理由
+### Why not a volume threshold
 
-Windows 11 の **Voice Clarity**（キャプチャ経路に挿入される AI ノイズ抑制の APO）が有効な環境では、暗騒音が抑制されて **送信機が生きていても静かな部屋では -100 dB 以下**まで落ちます。「電池切れ時のノイズ」と「電池がある状態の環境音」の差が消えるため、どこにしきい値を置いても両者を区別できません。信号途絶による判定はこの影響を受けません。
+With Windows 11 **Voice Clarity** (an AI noise-suppression APO inserted into the capture path) enabled, ambient noise is suppressed so aggressively that a **live microphone in a quiet room reads below -100 dB**. The gap between "dead battery noise" and "live microphone in a quiet room" disappears, so no threshold can separate them. Signal-dropout detection is immune to this.
 
-## スリープを妨げない仕組み
+## How Sleep Is Kept Working
 
-マイクを開いたままにすると、USB オーディオドライバが Windows に SYSTEM 電源要求を立て続け、PC がスリープに入れなくなります。アプリ側からこの要求を取り下げる手段はないため、**ストリームそのものを閉じる**しかありません。
+Holding a capture stream open makes the USB audio driver raise a SYSTEM power request, which keeps Windows from sleeping. An application cannot withdraw that request, so the only fix is to **close the stream**.
 
-本アプリは PC の無操作が続くと監視を自動停止してストリームを閉じ、操作を再開すると自動で開き直します。「PC を触っていない ＝ ワイヤレスマイクも使っていない」ため、実用上失うものはありません。
+This app stops monitoring and closes the stream once the PC has been idle, then reopens it as soon as input resumes. Since an idle PC means an unused wireless microphone, nothing practical is lost.
 
-- 自動停止・自動再開では通知音を鳴らしません（手動の停止・再開と区別するため）
-- 手動で監視を停止した場合は、操作を再開しても自動では復活しません
-- 他のアプリ（Discord・OBS 等）がマイクを使用している間は監視を継続します。その間はそのアプリ由来で電源要求が立つため、こちらが閉じてもスリープしないためです
+- Automatic stop and resume are silent, to keep them distinct from manual stop and resume
+- If monitoring was stopped manually, it does not come back on its own when input resumes
+- Monitoring continues while another app (Discord, OBS, and the like) is using the microphone, because that app raises the power request anyway
 
-無操作と判定するまでの秒数は、お使いの環境の Windows スリープ設定より短く設定してください（既定は 180 秒）。
+Set the idle threshold shorter than the machine's Windows sleep timeout (the default is 180 seconds).
 
-なお、スリープを妨げる要因はこのアプリだけではありません。動画を再生しているブラウザや、音声を出している他のアプリも電源要求を立てます。スリープしない場合は、管理者権限で `powercfg /requests` を実行すると、どのデバイスやプロセスが要求を立てているか確認できます。
+This app is not the only thing that can keep a machine awake: a browser playing video, or any app producing audio, raises its own power request. When the machine will not sleep, run `powercfg /requests` from an elevated prompt to see which device or process is holding it.
 
-## 主な機能
+## Main Features
 
-- 入力デバイス選択（WASAPI）
-- 信号途絶による電池切れ検知
-- アラート間隔の設定
-- 通知音の変更（内蔵音 5 種 / 任意の WAV ファイル）
-- 一時停止音、監視停止音、監視再開音の設定
-- アラート後の監視自動一時停止と、信号復帰時の自動再開
-- PC の無操作に連動した監視の自動停止・再開（スリープ阻害の回避）
-- 現在の入力レベル（dB / ゼロ率）のライブ表示
-- タスクトレイ常駐（状態を色で示すアイコン、設定ファイルとログへの導線）
-- 表示言語の切り替え（日本語 / English / 한국어 / 简体中文 / Français）
-- ライト / ダークテーマ（Windows の設定に追随）
-- Windows 用 EXE ビルド
+- Input device selection (WASAPI)
+- Battery-drain detection by signal dropout
+- Configurable alert interval
+- Configurable alert sound (5 built-in sounds or any WAV file)
+- Configurable pause, stop, and resume sounds
+- Automatic monitoring pause after an alert, with automatic resume when the signal returns
+- Idle-linked automatic stop and resume, so the machine can still sleep
+- Live input level readout (dB and zero-sample ratio)
+- Task tray integration (state-colored icon, status on hover, a quick flyout on left click, shortcuts to the config file and log)
+- Interface language switching (日本語 / English / 한국어 / 简体中文 / Français)
+- Light and dark themes, following the Windows setting
+- Windows EXE build support
 
-## タスクトレイ
+## Task Tray
 
-常駐中はタスクトレイのアイコンが現在の状態を色で示します。
+While resident, the tray icon shows the current state by color.
 
-![タスクトレイのアイコン](./docs/images/tray-icons.png)
+![Task tray icons](./docs/images/tray-icons.png)
 
-| アイコン | 状態 | 意味 |
+| Icon | State | Meaning |
 |---|---|---|
-| グレー | 停止中 | 手動で監視を停止した状態。操作を再開しても自動では復活しません |
-| 緑 | 監視中 | 通常の監視状態 |
-| 赤 | アラート | 信号途絶を検知して通知した直後（5秒間） |
-| オレンジ | 一時停止 | アラート後の自動一時停止。マイクは開いたままで、信号が戻ると自動再開します |
-| 水色 | 自動停止 | PC の無操作によりマイクを閉じた状態。操作を再開すると自動で戻ります |
+| Gray | Stopped | Monitoring was stopped manually; it does not resume on its own |
+| Green | Monitoring | Normal monitoring |
+| Red | Alert | Signal loss was detected and alerted (shown for 5 seconds) |
+| Orange | Paused | Auto-paused after an alert. The microphone stays open and monitoring resumes when the signal returns |
+| Light blue | Idle-stopped | The microphone was closed because the PC went idle. It reopens as soon as input resumes |
 
-**オレンジと水色の違い**が重要です。オレンジ（一時停止）はアラートを鳴らすのをやめるだけでマイクは開いたまま、水色（自動停止）はマイクを閉じます。スリープを妨げないのは水色の状態です。
+The distinction between **orange and light blue** matters: orange only stops the alerts and keeps the microphone open, while light blue closes it. Only the light blue state lets the machine sleep.
 
-右クリックメニューから、設定画面の表示、監視の開始／停止、設定ファイルの場所を開く、ログを開く、終了ができます。
+Hovering over the icon shows the current state and the device being monitored.
 
-## 設定項目
+A left click opens a small flyout showing the state, device name, and input level, with buttons to start/stop monitoring and to open the settings window. Clicking anywhere outside closes it.
 
-| 項目 | 説明 |
+The right-click menu offers the settings window, monitoring start/stop, opening the config file location, opening the log, and quit.
+
+## Settings
+
+| Setting | Description |
 |---|---|
-| 入力デバイス | 監視するワイヤレスマイクの受信機。デバイス番号は再列挙で変わるため、設定には名前を保存します |
-| アラート間隔 (秒) | 信号途絶が続く間、アラートを繰り返す間隔 |
-| 全体音量 | 通知音の音量（0〜100） |
-| 通知音 | 電池切れ検知時に鳴らす音 |
-| 一時停止サウンド | 自動一時停止した際に鳴らす音 |
-| 監視停止 / 監視再開サウンド | 手動で監視を切り替えた際に鳴らす音 |
-| 自動一時停止 | 指定回数アラートを鳴らしたら監視を一時停止する |
-| 一時停止までのアラート回数 | 既定は 1 回 |
-| 無操作で自動停止 | PC の無操作が続いたら監視を止める（既定は有効） |
-| 無操作と判定するまで (秒) | 既定は 180 秒（30〜1800） |
-| 他アプリ使用中は継続 | 他のアプリがマイクを使用中は監視を続ける（既定は有効） |
-| テーマ | システムに合わせる / ライト / ダーク |
-| 言語 | 日本語 / English / 한국어 / 简体中文 / Français |
+| Input device | The wireless receiver to monitor. Stored by name, since PortAudio indices shift when devices are re-enumerated |
+| Alert interval (sec) | How often to repeat the alert while the signal is gone |
+| Volume | Notification volume (0–100) |
+| Alert sound | Played when signal loss is detected |
+| Pause sound | Played when monitoring auto-pauses |
+| Stop / resume sound | Played when monitoring is toggled manually |
+| Auto-pause | Pause monitoring after the configured number of alerts |
+| Alerts before pausing | Defaults to 1 |
+| Stop when idle | Stop monitoring once the PC has been idle (on by default) |
+| Idle threshold (sec) | Defaults to 180 (range 30–1800) |
+| Keep going for other apps | Keep monitoring while another app uses the microphone (on by default) |
+| Theme | Match system / Light / Dark |
+| Language | 日本語 / English / 한국어 / 简体中文 / Français |
 
-言語は選んだ瞬間に画面へ反映されます。再起動は不要です。初回起動時は Windows のロケールから推定し、対応する翻訳がなければ英語を使います。
+The language applies the moment it is picked — no restart. On first launch the app infers it from the Windows locale, falling back to English when there is no translation for that locale.
 
-設定は変更すると自動保存されます。画面下部に保存時刻とバージョンが表示されます。
+Settings save automatically on change; the save time and the version are shown at the bottom of the window.
 
-設定ファイル `config.json` は実行ファイルと同じ場所に保存されます。タスクトレイの右クリックメニュー「設定ファイルの場所を開く」から辿れます。
+`config.json` sits next to the executable. The tray right-click menu has an "open config file location" entry.
 
-設定した受信機が見つからない場合は、WASAPI の既定デバイスへ自動的に切り替えます。スリープ復帰や USB の抜き差しでデバイス番号が変わっても監視を続けられます。
+If the configured receiver cannot be found, the app falls back to the WASAPI default device, so monitoring survives a sleep cycle or a replugged USB device even when the index changes.
 
-信号途絶と復帰の判定にはそれぞれ 1 秒の猶予があり、無線の瞬断や電源投入直後のリンク確立中に誤って反応しません。この値は設定項目ではなく内部定数です。
+Signal loss and signal return each require one second of confirmation, so brief radio dropouts and the link-establishment period after power-on do not trigger false alerts. These are internal constants rather than settings.
 
-## ログ
+## Logs
 
-動作の記録を実行ファイルと同じ場所の `logs/app.log` に出力します。タスクトレイの右クリックメニュー「ログを開く」から辿れます。
+The app writes to `logs/app.log` next to the executable. The tray right-click menu has an "open log" entry.
 
-記録するのは状態が変わったときだけです。起動と終了、監視の開始・停止（手動か無操作連動かの区別を含む）、入力デバイスの解決結果、アラート、自動一時停止とその解除、各種の失敗を残します。
+Only state changes are recorded: startup and shutdown, monitoring start and stop (distinguishing manual from idle-linked), the resolved input device, alerts, auto-pause and its release, and failures.
 
-常駐アプリなのでログが増えすぎないよう、次の3点で抑えています。
+Since the app stays resident, three measures keep the log from growing without bound.
 
-| 対策 | 内容 |
+| Measure | Detail |
 |---|---|
-| サイズ上限 | 512KB × 3世代。合計 1.5MB を超えません |
-| 重複の畳み込み | 直前と同じ内容は捨て、件数だけ次の行に添えます |
-| 既定は INFO | 巡回のたびには書きません |
+| Size cap | 512KB × 3 generations; never exceeds 1.5MB in total |
+| Repeat collapsing | Consecutive identical records are dropped, with the count appended to the next line |
+| INFO by default | Nothing is written on every poll |
 
-詳細ログが必要な場合は `config.json` の `debug_log` を `true` にしてください。巡回ごとの記録が増えるため常用は想定していません。
+Set `debug_log` to `true` in `config.json` for verbose output. It records each poll, so it is not meant for everyday use.
 
-## ディレクトリ構成
+## Repository Layout
 
 ```text
 wireless-mic-battery-alert/
@@ -141,6 +145,8 @@ wireless-mic-battery-alert/
     ├── activity.py
     ├── applog.py
     ├── tray.py
+    ├── tray_popup.py
+    ├── ui_host.py
     ├── version.py
     ├── test_phase10.py
     ├── test_suspend_flow.py
@@ -149,26 +155,29 @@ wireless-mic-battery-alert/
     ├── test_device_resolve.py
     ├── test_logging.py
     ├── test_i18n.py
+    ├── test_tray_popup.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
 ```
 
-| ファイル | 役割 |
+| File | Role |
 |---|---|
-| `main.py` | 起動、設定読込、監視制御、通知連携、GUI/トレイ連携 |
-| `monitor.py` | 入力デバイス監視、信号途絶判定 |
-| `activity.py` | PC の無操作時間と他アプリのマイク使用状況の取得 |
-| `applog.py` | ログ出力とサイズ上限の管理 |
-| `notifier.py` | 通知音の解決と再生 |
-| `settings.py` | 設定ファイルの読込・保存 |
-| `gui.py` | 設定画面 |
-| `i18n.py` | 表示文字列の翻訳カタログと言語の切り替え |
-| `theme.py` | 配色・フォントの一元管理 |
-| `tray.py` | タスクトレイ常駐 |
-| `version.py` | バージョン情報 |
+| `main.py` | Startup, config loading, monitor control, notification and tray/GUI wiring |
+| `monitor.py` | Input device monitoring and signal-dropout detection |
+| `activity.py` | PC idle time and other apps' microphone usage |
+| `applog.py` | Log output and size management |
+| `notifier.py` | Notification sound resolution and playback |
+| `settings.py` | Config file load and save |
+| `gui.py` | Settings window |
+| `i18n.py` | Translation catalog and language switching |
+| `theme.py` | Colors and fonts in one place |
+| `tray.py` | Task tray integration |
+| `tray_popup.py` | Flyout opened by a left click on the tray icon |
+| `ui_host.py` | UI thread that owns every window |
+| `version.py` | Version information |
 
-## 開発環境
+## Development Environment
 
 - Python
 - tkinter / ttk / sv_ttk
@@ -180,22 +189,20 @@ wireless-mic-battery-alert/
 - Pillow
 - PyInstaller
 
-依存パッケージの導入:
+Install dependencies:
 
 ```bash
 pip install -r wireless-mic-battery-alert-eng/requirements.txt
 ```
 
-## 実行方法
-
-開発環境で実行する場合:
+## Run in Development
 
 ```bash
 cd wireless-mic-battery-alert-eng
 python main.py
 ```
 
-## テスト
+## Tests
 
 ```bash
 cd wireless-mic-battery-alert-eng
@@ -206,33 +213,38 @@ python test_resume_no_alert.py
 python test_device_resolve.py
 python test_logging.py
 python test_i18n.py
+python test_tray_popup.py
 ```
 
-無操作判定・マイク使用状況の取得・監視の自動停止と再開・設定画面の構築、翻訳カタログの整合と5言語での画面構築を確認します。Windows 環境で実行してください。
+These cover idle detection, microphone-usage lookup, automatic stop and resume, settings-window construction, translation-catalog consistency, building the window in all five languages, and the tray tooltip and flyout. Run them on Windows.
 
-## スクリーンショット
+## Screenshot
 
-![アプリ画面](./docs/images/app-screenshot.png)
+![Application screenshot](./docs/images/app-screenshot.png)
 
-## Windows ビルド
+## Windows Build
 
-Windows ネイティブ環境でのビルドを前提にしています。  
-Linux / WSL 上で生成した成果物は最終配布物として扱いません。
+Use a native Windows environment for final builds.  
+Artifacts built on Linux or WSL are not treated as final release outputs.
 
-詳細:
+See:
 
 - [wireless-mic-battery-alert-eng/BUILD_WINDOWS.md](./wireless-mic-battery-alert-eng/BUILD_WINDOWS.md)
 
-Windows での基本コマンド:
+Basic Windows command:
 
 ```bat
 cd wireless-mic-battery-alert-eng
 build_windows.bat
 ```
 
-## 補足
+## Notes
 
-- `wireless-mic-battery-alert-PL/` には設計、進行管理、レビュー用ドキュメントが含まれます
-- `wireless-mic-battery-alert-eng/` には実装本体が含まれます
-- `requirements-lock.txt` はビルド環境記録用です
-- 変更履歴は [CHANGELOG.md](./CHANGELOG.md) を参照してください
+- `wireless-mic-battery-alert-PL/` contains planning, design, and review documents
+- `wireless-mic-battery-alert-eng/` contains the application implementation
+- `requirements-lock.txt` is kept as a build-environment record
+- See [CHANGELOG.md](./CHANGELOG.md) for the release history
+
+## License
+
+MIT License. See [LICENSE](./LICENSE).

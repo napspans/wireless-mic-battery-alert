@@ -1,6 +1,6 @@
 # wireless-mic-battery-alert
 
-[日本語](./README.md) · [English](./README.en.md) · [한국어](./README.ko.md) · [简体中文](./README.zh.md) · [Français](./README.fr.md)
+[日本語](./README.ja.md) · [English](./README.md) · [한국어](./README.ko.md) · [简体中文](./README.zh.md) · [Français](./README.fr.md)
 
 Une application Windows qui détecte l'épuisement de la pile et les pertes de liaison d'un micro sans fil en surveillant la coupure du signal au niveau du récepteur, puis alerte l'utilisateur.
 
@@ -53,7 +53,7 @@ Cette application n'est pas la seule à pouvoir empêcher la veille : un navigat
 - Mise en pause automatique après une alerte, avec reprise automatique au retour du signal
 - Arrêt et reprise automatiques liés à l'inactivité du PC, pour préserver la veille
 - Affichage en direct du niveau d'entrée (dB et taux de silence)
-- Présence dans la zone de notification (icône colorée selon l'état, accès au fichier de configuration et au journal)
+- Présence dans la zone de notification (icône colorée selon l'état, état affiché au survol, panneau rapide au clic gauche, accès au fichier de configuration et au journal)
 - Changement de langue de l'interface (日本語 / English / 한국어 / 简体中文 / Français)
 - Thèmes clair et sombre, suivant le réglage de Windows
 - Génération d'un EXE pour Windows
@@ -73,6 +73,10 @@ En arrière-plan, l'icône indique l'état courant par sa couleur.
 | Bleu clair | Arrêt auto | Le micro a été fermé parce que le PC est inactif. Il se rouvre dès la reprise de l'activité |
 
 La distinction entre **orange et bleu clair** est essentielle : l'orange (pause) cesse seulement de déclencher les alertes et garde le micro ouvert, tandis que le bleu clair (arrêt auto) le ferme. Seul l'état bleu clair permet la mise en veille.
+
+Le survol de l'icône affiche l'état courant et le périphérique surveillé.
+
+Un clic gauche ouvre un petit panneau indiquant l'état, le périphérique et le niveau d'entrée, avec des boutons pour démarrer/arrêter la surveillance et ouvrir les paramètres. Un clic en dehors le ferme.
 
 Le menu contextuel donne accès à la fenêtre des paramètres, au démarrage/arrêt de la surveillance, à l'emplacement du fichier de configuration, au journal et à la sortie.
 
@@ -141,6 +145,8 @@ wireless-mic-battery-alert/
     ├── activity.py
     ├── applog.py
     ├── tray.py
+    ├── tray_popup.py
+    ├── ui_host.py
     ├── version.py
     ├── test_phase10.py
     ├── test_suspend_flow.py
@@ -149,6 +155,7 @@ wireless-mic-battery-alert/
     ├── test_device_resolve.py
     ├── test_logging.py
     ├── test_i18n.py
+    ├── test_tray_popup.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
@@ -166,6 +173,8 @@ wireless-mic-battery-alert/
 | `i18n.py` | Catalogue de traductions et changement de langue |
 | `theme.py` | Couleurs et polices centralisées |
 | `tray.py` | Présence dans la zone de notification |
+| `tray_popup.py` | Panneau rapide ouvert par un clic gauche sur l'icône |
+| `ui_host.py` | Fil d'exécution de l'interface, propriétaire de toutes les fenêtres |
 | `version.py` | Informations de version |
 
 ## Environnement de développement
@@ -204,9 +213,10 @@ python test_resume_no_alert.py
 python test_device_resolve.py
 python test_logging.py
 python test_i18n.py
+python test_tray_popup.py
 ```
 
-Ils couvrent la détection d'inactivité, la consultation de l'usage du micro, l'arrêt et la reprise automatiques, la construction de la fenêtre des paramètres, la cohérence du catalogue de traductions et la construction de la fenêtre dans les cinq langues. À exécuter sous Windows.
+Ils couvrent la détection d'inactivité, la consultation de l'usage du micro, l'arrêt et la reprise automatiques, la construction de la fenêtre des paramètres, la cohérence du catalogue de traductions la construction de la fenêtre dans les cinq langues, ainsi que l'infobulle et le panneau de la zone de notification. À exécuter sous Windows.
 
 ## Capture d'écran
 
@@ -234,3 +244,7 @@ build_windows.bat
 - `wireless-mic-battery-alert-eng/` contient l'implémentation
 - `requirements-lock.txt` sert de trace de l'environnement de génération
 - Voir [CHANGELOG.md](./CHANGELOG.md) pour l'historique des versions
+
+## Licence
+
+Sous licence MIT. Voir [LICENSE](./LICENSE).

@@ -1,6 +1,6 @@
 # wireless-mic-battery-alert
 
-[日本語](./README.md) · [English](./README.en.md) · [한국어](./README.ko.md) · [简体中文](./README.zh.md) · [Français](./README.fr.md)
+[日本語](./README.ja.md) · [English](./README.md) · [한국어](./README.ko.md) · [简体中文](./README.zh.md) · [Français](./README.fr.md)
 
 무선 마이크의 배터리 방전이나 연결 이상을 수신기의 신호 두절로 감지해 사용자에게 알리는 Windows 애플리케이션입니다.
 
@@ -53,7 +53,7 @@ Windows 11의 **Voice Clarity**(캡처 경로에 삽입되는 AI 노이즈 억�
 - 경고 후 모니터링 자동 일시정지와 신호 복귀 시 자동 재개
 - PC 유휴 상태와 연동한 모니터링 자동 중지·재개 (절전 방해 회피)
 - 현재 입력 레벨 (dB / 무음률) 실시간 표시
-- 작업 표시줄 트레이 상주 (상태를 색으로 나타내는 아이콘, 설정 파일과 로그로 가는 링크)
+- 작업 표시줄 트레이 상주 (상태를 색으로 나타내는 아이콘, 마우스를 올리면 상태 표시, 왼쪽 클릭 간이 팝업, 설정 파일과 로그로 가는 링크)
 - 표시 언어 전환 (日本語 / English / 한국어 / 简体中文 / Français)
 - 라이트 / 다크 테마 (Windows 설정에 연동)
 - Windows용 EXE 빌드
@@ -73,6 +73,10 @@ Windows 11의 **Voice Clarity**(캡처 경로에 삽입되는 AI 노이즈 억�
 | 하늘색 | 자동 중지 | PC 유휴로 마이크를 닫은 상태. 조작을 재개하면 자동으로 돌아옵니다 |
 
 **주황과 하늘색의 차이**가 중요합니다. 주황(일시정지)은 경고를 울리는 것만 멈출 뿐 마이크는 열린 채이고, 하늘색(자동 중지)은 마이크를 닫습니다. 절전을 방해하지 않는 것은 하늘색 상태입니다.
+
+아이콘에 마우스를 올리면 상태와 모니터링 중인 장치 이름이 표시됩니다.
+
+왼쪽 클릭하면 간이 팝업이 열립니다. 상태, 장치 이름, 입력 레벨을 확인할 수 있고, 모니터링 시작/중지와 설정 창 열기도 여기서 할 수 있습니다. 팝업 바깥을 클릭하면 닫힙니다.
 
 우클릭 메뉴에서 설정 창 열기, 모니터링 시작/중지, 설정 파일 위치 열기, 로그 열기, 종료를 할 수 있습니다.
 
@@ -141,6 +145,8 @@ wireless-mic-battery-alert/
     ├── activity.py
     ├── applog.py
     ├── tray.py
+    ├── tray_popup.py
+    ├── ui_host.py
     ├── version.py
     ├── test_phase10.py
     ├── test_suspend_flow.py
@@ -149,6 +155,7 @@ wireless-mic-battery-alert/
     ├── test_device_resolve.py
     ├── test_logging.py
     ├── test_i18n.py
+    ├── test_tray_popup.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
@@ -166,6 +173,8 @@ wireless-mic-battery-alert/
 | `i18n.py` | 표시 문자열의 번역 카탈로그와 언어 전환 |
 | `theme.py` | 배색·글꼴의 일원 관리 |
 | `tray.py` | 작업 표시줄 트레이 상주 |
+| `tray_popup.py` | 트레이 아이콘 왼쪽 클릭으로 여는 간이 팝업 |
+| `ui_host.py` | 모든 창을 하나의 스레드에서 관리하는 UI 스레드 |
 | `version.py` | 버전 정보 |
 
 ## 개발 환경
@@ -206,9 +215,10 @@ python test_resume_no_alert.py
 python test_device_resolve.py
 python test_logging.py
 python test_i18n.py
+python test_tray_popup.py
 ```
 
-유휴 판정, 마이크 사용 상황 취득, 모니터링의 자동 중지와 재개, 설정 창의 구축, 번역 카탈로그의 정합성과 5개 언어에서의 화면 구축을 확인합니다. Windows 환경에서 실행하세요.
+유휴 판정, 마이크 사용 상황 취득, 모니터링의 자동 중지와 재개, 설정 창의 구축, 번역 카탈로그의 정합성과 5개 언어에서의 화면 구축, 트레이 툴팁과 간이 팝업을 확인합니다. Windows 환경에서 실행하세요.
 
 ## 스크린샷
 
@@ -236,3 +246,7 @@ build_windows.bat
 - `wireless-mic-battery-alert-eng/`에는 구현 본체가 들어 있습니다
 - `requirements-lock.txt`는 빌드 환경 기록용입니다
 - 변경 이력은 [CHANGELOG.md](./CHANGELOG.md)를 참조하세요
+
+## 라이선스
+
+MIT License입니다. [LICENSE](./LICENSE)를 참조하세요.

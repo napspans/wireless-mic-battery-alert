@@ -1,6 +1,6 @@
 # wireless-mic-battery-alert
 
-[日本語](./README.md) · [English](./README.en.md) · [한국어](./README.ko.md) · [简体中文](./README.zh.md) · [Français](./README.fr.md)
+[日本語](./README.ja.md) · [English](./README.md) · [한국어](./README.ko.md) · [简体中文](./README.zh.md) · [Français](./README.fr.md)
 
 一款 Windows 应用程序，通过接收机的信号中断来检测无线麦克风的电量耗尽和连接异常，并通知用户。
 
@@ -53,7 +53,7 @@
 - 警告后自动暂停监控，信号恢复后自动继续
 - 与电脑空闲状态联动的自动停止与恢复（避免妨碍睡眠）
 - 当前输入电平（dB / 静音率）实时显示
-- 任务栏托盘常驻（以颜色表示状态的图标，配置文件和日志的入口）
+- 任务栏托盘常驻（以颜色表示状态的图标、悬停显示状态、左键单击弹出简易面板，配置文件和日志的入口）
 - 界面语言切换（日本語 / English / 한국어 / 简体中文 / Français）
 - 浅色 / 深色主题（跟随 Windows 设置）
 - Windows 用 EXE 构建
@@ -73,6 +73,10 @@
 | 浅蓝 | 自动停止 | 因电脑空闲而关闭麦克风的状态。恢复操作后自动返回 |
 
 **橙色与浅蓝的区别**很重要。橙色（暂停）只是停止发出警告，麦克风仍然打开；浅蓝（自动停止）会关闭麦克风。能让系统进入睡眠的是浅蓝状态。
+
+将鼠标悬停在图标上，会显示当前状态和正在监控的设备名称。
+
+左键单击会打开简易弹出面板，可查看状态、设备名称和输入电平，也可在此开始/停止监控或打开设置窗口。单击面板外部即可关闭。
 
 通过右键菜单可以打开设置窗口、开始/停止监控、打开配置文件位置、打开日志以及退出。
 
@@ -141,6 +145,8 @@ wireless-mic-battery-alert/
     ├── activity.py
     ├── applog.py
     ├── tray.py
+    ├── tray_popup.py
+    ├── ui_host.py
     ├── version.py
     ├── test_phase10.py
     ├── test_suspend_flow.py
@@ -149,6 +155,7 @@ wireless-mic-battery-alert/
     ├── test_device_resolve.py
     ├── test_logging.py
     ├── test_i18n.py
+    ├── test_tray_popup.py
     ├── build.spec
     ├── build_windows.bat
     └── BUILD_WINDOWS.md
@@ -166,6 +173,8 @@ wireless-mic-battery-alert/
 | `i18n.py` | 界面文字的翻译目录与语言切换 |
 | `theme.py` | 配色与字体的统一管理 |
 | `tray.py` | 任务栏托盘常驻 |
+| `tray_popup.py` | 左键单击托盘图标时打开的简易弹出面板 |
+| `ui_host.py` | 在单一线程中管理所有窗口的 UI 线程 |
 | `version.py` | 版本信息 |
 
 ## 开发环境
@@ -206,9 +215,10 @@ python test_resume_no_alert.py
 python test_device_resolve.py
 python test_logging.py
 python test_i18n.py
+python test_tray_popup.py
 ```
 
-检查空闲判定、麦克风使用情况的获取、监控的自动停止与恢复、设置窗口的构建，以及翻译目录的一致性和五种语言下的界面构建。请在 Windows 环境中执行。
+检查空闲判定、麦克风使用情况的获取、监控的自动停止与恢复、设置窗口的构建，翻译目录的一致性、五种语言下的界面构建，以及托盘提示和简易弹出面板。请在 Windows 环境中执行。
 
 ## 截图
 
@@ -236,3 +246,7 @@ build_windows.bat
 - `wireless-mic-battery-alert-eng/` 包含实现本体
 - `requirements-lock.txt` 用于记录构建环境
 - 变更历史请参阅 [CHANGELOG.md](./CHANGELOG.md)
+
+## 许可证
+
+采用 MIT License。请参阅 [LICENSE](./LICENSE)。
