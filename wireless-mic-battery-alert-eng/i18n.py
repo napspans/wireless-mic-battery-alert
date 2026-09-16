@@ -115,6 +115,10 @@ _TRANSLATIONS = {
         "status.paused": "⏸ 一時停止中",
         "status.monitoring": "● 監視中",
         "status.levels": "   {db} dB / ゼロ率 {ratio}%",
+        "status.alert": "⚠ 信号途絶",
+        "device.auto": "（自動選択）",
+        "popup.level": "入力レベル",
+        "popup.settings": "設定",
 
         # ── 保存表示 ──
         "save.saving": "保存中…",
@@ -207,6 +211,10 @@ _TRANSLATIONS = {
         "status.paused": "⏸ Paused",
         "status.monitoring": "● Monitoring",
         "status.levels": "   {db} dB / silence {ratio}%",
+        "status.alert": "⚠ Signal lost",
+        "device.auto": "(automatic)",
+        "popup.level": "Input level",
+        "popup.settings": "Settings",
 
         "save.saving": "Saving…",
         "save.saved": "✓ Saved at {time}",
@@ -295,6 +303,10 @@ _TRANSLATIONS = {
         "status.paused": "⏸ 일시정지",
         "status.monitoring": "● 모니터링 중",
         "status.levels": "   {db} dB / 무음률 {ratio}%",
+        "status.alert": "⚠ 신호 끊김",
+        "device.auto": "(자동 선택)",
+        "popup.level": "입력 레벨",
+        "popup.settings": "설정",
 
         "save.saving": "저장 중…",
         "save.saved": "✓ {time}에 저장했습니다",
@@ -383,6 +395,10 @@ _TRANSLATIONS = {
         "status.paused": "⏸ 已暂停",
         "status.monitoring": "● 监控中",
         "status.levels": "   {db} dB / 静音率 {ratio}%",
+        "status.alert": "⚠ 信号中断",
+        "device.auto": "（自动选择）",
+        "popup.level": "输入电平",
+        "popup.settings": "设置",
 
         "save.saving": "正在保存…",
         "save.saved": "✓ 已于 {time} 保存",
@@ -471,6 +487,10 @@ _TRANSLATIONS = {
         "status.paused": "⏸ En pause",
         "status.monitoring": "● Surveillance",
         "status.levels": "   {db} dB / silence {ratio} %",
+        "status.alert": "⚠ Signal perdu",
+        "device.auto": "(automatique)",
+        "popup.level": "Niveau d'entrée",
+        "popup.settings": "Paramètres",
 
         "save.saving": "Enregistrement…",
         "save.saved": "✓ Enregistré à {time}",

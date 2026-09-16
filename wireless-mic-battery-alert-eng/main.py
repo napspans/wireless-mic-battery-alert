@@ -15,8 +15,11 @@ import settings
 from i18n import t
 from monitor import AudioMonitor
 from notifier import Notifier
+import tray
 from tray import TrayIcon
+from tray_popup import TrayPopup
 from gui import SettingsGUI
+from ui_host import UIHost
 import version
 
 logger = logging.getLogger(__name__)
@@ -34,9 +37,10 @@ class App:
         self._monitor: AudioMonitor = None
         self._tray: TrayIcon = None
         self._notifier: Notifier = None
+        # 画面は全て UI スレッドが持つ。_gui と _popup は UI スレッドからのみ触る。
+        self._ui = UIHost()
         self._gui: SettingsGUI | None = None
-        self._gui_lock = threading.Lock()
-        self._gui_starting = False
+        self._popup: TrayPopup | None = None
         self._quit_event = threading.Event()
         self._last_alert_time: float = 0.0
         self._alert_lock = threading.Lock()
@@ -156,68 +160,67 @@ class App:
         except Exception:
             logger.exception("ログを開けませんでした: %s", path)
 
-    def _run_gui(self):
-        gui = SettingsGUI(
+    def _open_settings(self):
+        """どのスレッドからでも呼べる。"""
+        self._ui.call(self._show_settings)
+
+    def _show_settings(self) -> None:
+        if self._gui is not None:
+            self._gui.bring_to_front()
+            return
+        self._gui = SettingsGUI(
             self._monitor,
             self._config,
             on_config_save=self._on_config_save,
             on_toggle_monitor=self._toggle_monitor,
             is_suspended=self._is_suspended,
+            master=self._ui.root,
+            on_closed=self._on_settings_closed,
         )
-        with self._gui_lock:
-            self._gui = gui
-            self._gui_starting = False
-        try:
-            gui.run()
-        finally:
-            with self._gui_lock:
-                self._gui = None
+        self._gui.bring_to_front()
 
-    def _open_settings(self):
-        with self._gui_lock:
-            if self._gui is not None:
-                try:
-                    self._gui._root.after(0, lambda: (self._gui._root.lift(), self._gui._root.focus_force()))
-                    return
-                except Exception:
-                    self._gui = None
-            if self._gui_starting:
-                return
-            self._gui_starting = True
-            thread = threading.Thread(target=self._run_gui, daemon=False)
+    def _on_settings_closed(self) -> None:
+        self._gui = None
 
-        thread.start()
+    def _toggle_popup(self) -> None:
+        """トレイの左クリック。トレイのスレッドから呼ばれる。"""
+        self._ui.call(self._popup.toggle)
+
+    def _device_display(self) -> str:
+        if self._monitor.is_running and self._monitor.device_name:
+            return self._monitor.device_name
+        return self._config.get("device_name") or t("device.auto")
+
+    def _popup_snapshot(self) -> dict:
+        db, _ = self._monitor.levels
+        return {
+            "state": self._current_state(),
+            "device": self._device_display(),
+            "running": self._monitor.is_running,
+            "db": db,
+            "monitoring": self._is_monitoring(),
+        }
 
     def _on_stream_error(self, error_message: str) -> None:
-        logger.exception("Audio stream failed to start: %s", error_message)
+        logger.error("入力ストリームを開始できませんでした: %s", error_message)
         message = t("error.device_body", error=error_message)
+        self._ui.call(lambda: self._show_stream_error(message))
 
-        with self._gui_lock:
-            gui = self._gui
-
-        if gui is not None:
-            def show_dialog() -> None:
-                try:
-                    messagebox.showerror(
-                        t("error.device_title"),
-                        message,
-                        parent=gui._root,
-                    )
-                finally:
-                    self._open_settings()
-
-            gui._root.after(0, show_dialog)
-            return
-
-        temp_root = tk.Tk()
-        temp_root.withdraw()
-        temp_root.attributes("-topmost", True)
-        try:
-            messagebox.showerror(t("error.device_title"), message, parent=temp_root)
-        finally:
-            temp_root.destroy()
-
-        self._open_settings()
+    def _show_stream_error(self, message: str) -> None:
+        title = t("error.device_title")
+        if self._gui is not None:
+            self._gui.show_error(title, message)
+        else:
+            # 親が隠したルートだとダイアログが他のウィンドウの裏に回るため、
+            # 最前面の隠し窓を親にする。
+            holder = tk.Toplevel(self._ui.root)
+            holder.withdraw()
+            holder.attributes("-topmost", True)
+            try:
+                messagebox.showerror(title, message, parent=holder)
+            finally:
+                holder.destroy()
+        self._show_settings()
 
     def _toggle_monitor(self):
         """トレイ・GUI からの手動トグル。ユーザーの意図を更新する。"""
@@ -318,22 +321,28 @@ class App:
         self._quit_event.set()
         os._exit(0)
 
+    def _current_state(self) -> str:
+        if self._suspended:
+            return "suspended"
+        if not self._monitor.is_running:
+            return "idle"
+        if self._monitor.is_paused:
+            return "paused"
+        with self._alert_lock:
+            elapsed = time.monotonic() - self._last_alert_time
+        if elapsed < self._ALERT_DISPLAY_SEC:
+            return "alert"
+        return "monitoring"
+
     def _state_polling_loop(self):
         while not self._quit_event.is_set():
-            if self._suspended:
-                state = "suspended"
-            elif not self._monitor.is_running:
-                state = "idle"
-            elif self._monitor.is_paused:
-                state = "paused"
-            else:
-                with self._alert_lock:
-                    elapsed = time.monotonic() - self._last_alert_time
-                if elapsed < self._ALERT_DISPLAY_SEC:
-                    state = "alert"
-                else:
-                    state = "monitoring"
-            self._tray.update_state(state)
+            try:
+                state = self._current_state()
+                self._tray.update_state(state)
+                self._tray.update_tooltip(
+                    tray.build_tooltip(state, self._device_display()))
+            except Exception:
+                logger.exception("トレイの状態更新に失敗しました")
             self._quit_event.wait(0.5)
 
     def run(self):
@@ -354,6 +363,14 @@ class App:
             on_auto_pause=self._on_auto_pause,
             on_auto_resume=self._on_auto_resume,
         )
+        self._ui.start()
+        self._popup = TrayPopup(
+            self._ui.root,
+            get_snapshot=self._popup_snapshot,
+            on_toggle_monitor=self._toggle_monitor,
+            on_open_settings=self._show_settings,
+            get_theme=lambda: self._config.get("theme", "system"),
+        )
         self._tray = TrayIcon(
             on_open_settings=self._open_settings,
             on_quit=self._quit,
@@ -361,6 +378,7 @@ class App:
             is_monitoring=self._is_monitoring,
             on_open_config_location=self._open_config_location,
             on_open_log=self._open_log,
+            on_activate=self._toggle_popup,
         )
 
         try:

@@ -8,9 +8,9 @@ APP_VERSION と APP_UPDATED を必ず同時に更新する。
 
 from i18n import t
 
-APP_VERSION = "2.3.0"
+APP_VERSION = "2.4.0"
 # 最終バージョン更新日 (YYYY-MM-DD)
-APP_UPDATED = "2026-08-21"
+APP_UPDATED = "2026-09-16"
 
 
 def version_line() -> str:

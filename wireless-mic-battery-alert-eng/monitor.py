@@ -140,6 +140,8 @@ class AudioMonitor:
         self._paused = False
 
         self._stream: sd.InputStream | None = None
+        # 実際に開いたデバイス名。設定が未指定でも自動選択の結果を示せるよう持つ。
+        self._device_name: str | None = None
         self._monitor_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
 
@@ -222,6 +224,11 @@ class AudioMonitor:
         return self._paused
 
     @property
+    def device_name(self) -> str | None:
+        """監視中のデバイス名。一度も開いていなければ None。"""
+        return self._device_name
+
+    @property
     def levels(self) -> tuple[float, float]:
         """直近ブロックの (dB, ゼロサンプル率) を返す。"""
         with self._silence_lock:
@@ -263,6 +270,7 @@ class AudioMonitor:
             callback=self._audio_callback,
         )
         self._stream.start()
+        self._device_name = str(device_info["name"])
         logger.info(
             "監視を開始しました: %s (%d Hz / %dch)",
             device_info["name"], self._SAMPLERATE, self._CHANNELS,

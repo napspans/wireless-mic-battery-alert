@@ -140,8 +140,11 @@ class SettingsGUI:
         on_config_save: callable,
         on_toggle_monitor=None,
         is_suspended=None,
+        master: tk.Misc | None = None,
+        on_closed=None,
     ):
         self._monitor = monitor
+        self._on_closed = on_closed
         self._config = config
         self._on_config_save = on_config_save
         self._on_toggle_monitor = on_toggle_monitor
@@ -162,7 +165,10 @@ class SettingsGUI:
         # 言語が変わったときに表示を訳し直す処理。ウィジェット生成時に登録する。
         self._retranslate_hooks: list = []
 
-        self._root = tk.Tk()
+        # アプリ本体では常駐する UI スレッドのルートに Toplevel としてぶら下げる
+        # （ui_host.py を参照）。master を渡さないのは単体で動かすテストのみ。
+        self._owns_root = master is None
+        self._root = tk.Tk() if self._owns_root else tk.Toplevel(master)
 
         # フォントと option DB はウィジェット生成より前に用意する必要がある。
         # 名前付きフォントが未定義のまま生成されると Tk の既定フォントに落ち、
@@ -1084,7 +1090,18 @@ class SettingsGUI:
     # -------------------------------------------------------------------------
 
     def run(self) -> None:
-        self._root.mainloop()
+        """単体で動かす場合のみイベントループを回す。"""
+        if self._owns_root:
+            self._root.mainloop()
+
+    def bring_to_front(self) -> None:
+        self._root.deiconify()
+        self._root.lift()
+        self._root.focus_force()
+
+    def show_error(self, title: str, message: str) -> None:
+        from tkinter import messagebox
+        messagebox.showerror(title, message, parent=self._root)
 
     def _on_close(self) -> None:
         # 保存待ちのまま閉じられると変更が失われるので、ここで確定させる
@@ -1107,4 +1124,9 @@ class SettingsGUI:
         self._tracked_vars = []
         self._retranslate_hooks = []
         self._monitor_btn_var = None
+        if not self._owns_root:
+            # bind_all はインタプリタ全体に効く。ルートは生き続けるので外しておく。
+            self._root.unbind_all("<MouseWheel>")
         self._root.destroy()
+        if self._on_closed is not None:
+            self._on_closed()
